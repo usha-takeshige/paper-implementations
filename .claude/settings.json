@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(uv run pytest*)",
+      "Bash(uv sync*)",
+      "Bash(uv add*)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ]
+  }
+}
