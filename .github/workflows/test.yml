@@ -15,8 +15,8 @@ jobs:
         id: filter
         with:
           filters: |
-            paper-test:
-              - 'papers/operation-test/**'
+            operation-test:
+              - 'operation-test/**'
 
 
   test:
