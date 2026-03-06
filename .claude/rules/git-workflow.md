@@ -1,4 +1,14 @@
-# Git Commit Rules
+# Git Workflow Rules
+
+## GitHub との通信
+- GitHub との通信は必ず `gh` コマンドを使う
+- `git push` でのリモート操作や curl での API 直叩きは禁止
+
+## gh コマンド例
+- PR作成: `gh pr create --title "..." --body "..."`
+- Issue作成: `gh issue create`
+- PR確認: `gh pr status`
+
 
 ## コミットメッセージルール
 
