@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      papers: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            operation-test:
+              - 'operation-test/**'
+
+
+  test:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    # 変更があった論文のみテスト実行
+    strategy:
+      matrix:
+        paper: ${{ fromJson(needs.detect-changes.outputs.papers) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.paper }}
+        run: uv sync --extra dev
+
+      - name: Run tests
+        working-directory: ${{ matrix.paper }}
+        run: uv run pytest tests/ -v --cov=src
