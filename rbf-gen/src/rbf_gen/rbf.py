@@ -31,6 +31,4 @@ class RBFBasis:
 
     def compute_vector(self, x: Tensor) -> Tensor:
         # x: (d,) -> phi: (K,)
-        diff = x.unsqueeze(0) - self.centers  # (K, d)
-        r = torch.norm(diff, dim=-1)  # (K,)
-        return self.kernel(r)
+        return self.compute_matrix(x.unsqueeze(0)).squeeze(0)

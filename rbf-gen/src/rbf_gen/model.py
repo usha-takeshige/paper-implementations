@@ -32,15 +32,15 @@ class RBFGenModel(nn.Module):
             return result.squeeze(1)  # (N_eval,)
         return result  # (N_eval, B)
 
+    def _sample_ensemble(self, x: Tensor, n_samples: int) -> Tensor:
+        # Returns (N_eval, n_samples) function evaluations over random z
+        return self.forward(x, self.sample_z(n_samples))
+
     def predict_mean(self, x: Tensor, n_samples: int = 100) -> Tensor:
-        z = self.sample_z(n_samples)
-        f_z = self.forward(x, z)  # (N_eval, n_samples)
-        return f_z.mean(dim=1)
+        return self._sample_ensemble(x, n_samples).mean(dim=1)
 
     def predict_std(self, x: Tensor, n_samples: int = 100) -> Tensor:
-        z = self.sample_z(n_samples)
-        f_z = self.forward(x, z)  # (N_eval, n_samples)
-        return f_z.std(dim=1)
+        return self._sample_ensemble(x, n_samples).std(dim=1)
 
     def sample_z(self, batch_size: int) -> Tensor:
         return torch.randn(batch_size, self.generator.latent_dim)

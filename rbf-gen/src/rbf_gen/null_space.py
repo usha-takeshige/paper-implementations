@@ -19,7 +19,7 @@ class NullSpaceDecomposition:
             U, S, Vh = torch.linalg.svd(Phi, full_matrices=True)
 
             # Minimum-norm particular solution: w0 = Vh[:N].T @ diag(1/S) @ U.T @ y
-            self.w0 = Vh[:N].T @ (torch.diag(1.0 / S) @ (U.T @ y))
+            self.w0 = Vh[:N].T @ ((U.T @ y) / S)
 
             # Null-space basis: last K-N rows of Vh, transposed -> (K, K-N)
             # Phi @ null_basis = U @ diag(S) @ Vh[:N,:] @ Vh[N:].T = 0 (orthonormality of Vh)
