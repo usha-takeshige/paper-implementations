@@ -19,7 +19,7 @@ packages = ["src/rbf_gen"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "pytest>=9.0.2",
 ]
