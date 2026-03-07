@@ -147,6 +147,18 @@
 
 ---
 
+## 意図的にテストしていないクラス
+
+### `CurvatureKL`
+
+`losses.py` に実装されているが、専用テストは存在しない。これは問題ではなく意図的な設計判断：
+
+- `CurvatureKL.__call__` は `_gaussian_kl(samples)` を呼ぶだけで、`GradientMagnitudeKL` と全く同じ構造
+- `_gaussian_kl` は `test_kl_returns_scalar` / `test_kl_nonnegative` / `test_kl_zero_for_matching_distribution` で十分カバーされている
+- 追加テストは重複になるため省略
+
+---
+
 ## テストの共通事項
 
 - テストデータは `N=5, K=15, d=2` など小さい値で構成する
