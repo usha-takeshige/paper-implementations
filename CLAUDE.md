@@ -16,6 +16,16 @@
 - 新パッケージ追加: `uv add <package>`
 - テスト実行: `uv run pytest tests/`
 
+### pyproject.toml
+以下の内容は必ず記載する
+```
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+]
+```
+
 ## ブランチ・PRルール
 - ブランチ名: `<issue-number>-<paper-name>/<feature>`
 - コミットは論文ディレクトリ内の変更のみを含める
