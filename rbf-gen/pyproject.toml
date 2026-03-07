@@ -6,6 +6,7 @@ dependencies = [
     "torch",
     "numpy",
     "scipy",
+    "matplotlib>=3.10.8",
 ]
 
 [build-system]
