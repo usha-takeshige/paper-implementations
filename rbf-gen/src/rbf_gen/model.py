@@ -7,15 +7,11 @@ from rbf_gen.generator import Generator
 
 
 class RBFGenModel(nn.Module):
-    def __init__(self, rbf_basis: RBFBasis, generator: Generator):
+    def __init__(self, rbf_basis: RBFBasis, null_decomp: NullSpaceDecomposition, generator: Generator):
         super().__init__()
         self.rbf_basis = rbf_basis
-        self.null_decomp = NullSpaceDecomposition()
+        self.null_decomp = null_decomp
         self.generator = generator
-
-    def fit_null_space(self, X: Tensor, y: Tensor) -> None:
-        Phi = self.rbf_basis.compute_matrix(X)
-        self.null_decomp.fit(Phi, y)
 
     def forward(self, x: Tensor, z: Tensor) -> Tensor:
         # z: (B, latent_dim)

@@ -2,6 +2,7 @@ import torch
 import pytest
 from rbf_gen.kernels import GaussianKernel
 from rbf_gen.rbf import RBFBasis
+from rbf_gen.null_space import NullSpaceDecomposition
 from rbf_gen.generator import Generator
 from rbf_gen.model import RBFGenModel
 
@@ -13,11 +14,12 @@ def setup():
     bounds = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
     kernel = GaussianKernel(epsilon=1.0)
     rbf_basis = RBFBasis.from_uniform(K, bounds, kernel)
-    generator = Generator(latent_dim=K - N, null_dim=K - N)
-    model = RBFGenModel(rbf_basis=rbf_basis, generator=generator)
     X = torch.rand(N, d)
     y = torch.rand(N)
-    model.fit_null_space(X, y)
+    null_decomp = NullSpaceDecomposition()
+    null_decomp.fit(rbf_basis.compute_matrix(X), y)
+    generator = Generator(latent_dim=K - N, null_dim=K - N)
+    model = RBFGenModel(rbf_basis=rbf_basis, null_decomp=null_decomp, generator=generator)
     return model, X, y, N, K, d
 
 

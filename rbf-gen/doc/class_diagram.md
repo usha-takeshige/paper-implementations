@@ -51,7 +51,6 @@ class RBFGenModel {
     +rbf_basis: RBFBasis
     +null_decomp: NullSpaceDecomposition
     +generator: Generator
-    +fit_null_space(X: Tensor, y: Tensor) void
     +forward(x: Tensor, z: Tensor) Tensor   # f_z(x)
     +predict_mean(x: Tensor, n_samples: int) Tensor
     +predict_std(x: Tensor, n_samples: int) Tensor
@@ -152,7 +151,7 @@ class RBFGenTrainer {
     +optimizer: Optimizer
     +n_epochs: int
     +batch_size: int
-    +train(X: Tensor, y: Tensor) void
+    +train() void
     +_train_step() Tensor
 }
 RBFGenTrainer --> RBFGenModel

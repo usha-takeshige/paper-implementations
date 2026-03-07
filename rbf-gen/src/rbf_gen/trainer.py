@@ -4,6 +4,7 @@ from rbf_gen.model import RBFGenModel
 from rbf_gen.losses import RBFGenLoss
 
 
+
 class RBFGenTrainer:
     def __init__(
         self,
@@ -21,8 +22,7 @@ class RBFGenTrainer:
         self.eval_grid = eval_grid
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    def train(self, X: Tensor, y: Tensor) -> None:
-        self.model.fit_null_space(X, y)
+    def train(self) -> None:
         for _ in range(self.n_epochs):
             self._train_step()
 
