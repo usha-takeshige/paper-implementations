@@ -17,6 +17,8 @@ jobs:
           filters: |
             operation-test:
               - 'operation-test/**'
+            rbf-gen:
+              - 'rbf-gen/**'
 
 
   test:
