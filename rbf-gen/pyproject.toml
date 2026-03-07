@@ -21,5 +21,6 @@ testpaths = ["tests"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.2",
+  "pytest",
+  "pytest-cov",  # ← これを追加
 ]
