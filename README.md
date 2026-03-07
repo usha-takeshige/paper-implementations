@@ -1,5 +1,7 @@
 # 気になった論文を気ままに実装するリポジトリ
 
+## 実装一覧
+
 ### rbf-gen
 **"Knowledge-guided generative surrogate modeling for high-dimensional design optimization under scarce data"**
 （Bingran Wang et al., UC San Diego / Samsung Electronics）
@@ -8,3 +10,33 @@
 [arXiv](https://arxiv.org/abs/2603.00052)
 
 データが極端に少ない設計最適化問題において、専門家のドメイン知識をサロゲートモデルに体系的に組み込むフレームワーク「RBF-Gen」を提案した論文。放射基底関数（radial basis function: RBF）の零空間を生成ネットワークで探索することで、「データを必ず補間しつつ、物理的に妥当な関数を生成する」という両立を実現している。
+
+
+## リポジトリ構成
+
+各論文の実装はそれぞれ独立したディレクトリで管理するモノレポ構成です。
+
+```
+paper-implementations/
+├── <paper-name>/
+     ├── doc/          # ドキュメント
+     ├── example/      # 使用例
+     ├── src/          # 実装コード
+     ├── tests/        # テストコード
+     ├── pyproject.toml
+     └── README.md
+
+```
+
+## 運用ルール
+
+### 基本方針
+- モノレポで管理する
+- 共通のルールに関してはルートディレクトリで管理し、個別のルールに関してはプロジェクトごとのディレクトリで管理を行う
+
+### 新しい論文を追加するとき
+1. ルート直下に短い名前のディレクトリを作成する
+2. `.github/workflows/test.yml`の`filters`に該当のディレクトリを追加する
+3. AIエージェントを用いた実装を行うときには、該当の論文のディレクトリに入った状態で作業を行う
+
+※ 運用のテストを行うときには、`operation-test`ディレクトリを使用する。
