@@ -1,6 +1,5 @@
-# paper-implementations
+# 気になった論文を気ままに実装するリポジトリ
 
-## 論文実装PJ
 ### rbf-gen
 **"Knowledge-guided generative surrogate modeling for high-dimensional design optimization under scarce data"**
 （Bingran Wang et al., UC San Diego / Samsung Electronics）
