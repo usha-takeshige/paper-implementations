@@ -19,6 +19,8 @@ jobs:
               - 'operation-test/**'
             rbf-gen:
               - 'rbf-gen/**'
+            mpde-bo:
+              - 'mpde-bo/**'
 
 
   test:
