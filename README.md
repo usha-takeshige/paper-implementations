@@ -2,7 +2,7 @@
 
 ## 実装一覧
 
-### rbf-gen
+### 01: rbf-gen
 **"Knowledge-guided generative surrogate modeling for high-dimensional design optimization under scarce data"**
 （Bingran Wang et al., UC San Diego / Samsung Electronics）
 
@@ -11,7 +11,7 @@
 
 データが極端に少ない設計最適化問題において、専門家のドメイン知識をサロゲートモデルに体系的に組み込むフレームワーク「RBF-Gen」を提案した論文。放射基底関数（radial basis function: RBF）の零空間を生成ネットワークで探索することで、「データを必ず補間しつつ、物理的に妥当な関数を生成する」という両立を実現している。
 
-### mpde-bo
+### 02: mpde-bo
 **"Sparse modeling based Bayesian optimization for experimental design"**
 (Ryuji Masui, Unseo Lee, Ryo Nakayama and Taro Hitosugi)
 
@@ -25,7 +25,7 @@
 
 ```
 paper-implementations/
-├── <paper-name>/
+├── <id>-<paper-name>/
      ├── doc/          # ドキュメント
      ├── example/      # 使用例
      ├── src/          # 実装コード
@@ -42,8 +42,8 @@ paper-implementations/
 - 共通のルールに関してはルートディレクトリで管理し、個別のルールに関してはプロジェクトごとのディレクトリで管理を行う
 
 ### 新しい論文を追加するとき
-1. ルート直下に短い名前のディレクトリを作成する
+1. ルート直下に`id-<paper-name>`という形式でディレクトリを作成する
 2. `.github/workflows/test.yml`の`filters`に該当のディレクトリを追加する
 3. AIエージェントを用いた実装を行うときには、該当の論文のディレクトリに入った状態で作業を行う
 
-※ 運用のテストを行うときには、`operation-test`ディレクトリを使用する。
+※ 運用のテストを行うときには、`99-operation-test`ディレクトリを使用する。
