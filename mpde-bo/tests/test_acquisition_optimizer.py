@@ -35,7 +35,7 @@ def make_optimizer(acquisition: str = "EI", **kwargs) -> AcquisitionOptimizer:
         raw_samples=16,
         **kwargs,
     )
-    return AcquisitionOptimizer(config=config, bounds=torch.stack([torch.zeros(2), torch.ones(2)]))
+    return AcquisitionOptimizer(config=config, bounds=torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.double))
 
 
 # ── maximize ──────────────────────────────────────────────────────────────────

@@ -22,7 +22,9 @@ def analyzer() -> ImportanceAnalyzer:
 
 @pytest.fixture
 def classifier(analyzer) -> ParameterClassifier:
-    config = ClassificationConfig(eps_l=1.0, eps_e=0.1)
+    # important_unimportant_data での実測: dims 0,1 の length scale ≈ 2.5
+    # eps_l=5.0 は重要次元を通過させ、非重要次元 (ls >> 100) を除外する
+    config = ClassificationConfig(eps_l=5.0, eps_e=0.1)
     return ParameterClassifier(analyzer=analyzer, config=config)
 
 
@@ -73,11 +75,13 @@ class TestClassify:
         assert 2 in result.unimportant
         assert 3 in result.unimportant
 
-    def test_very_large_eps_l_makes_all_unimportant(self, analyzer, model_and_data):
-        """8-6: eps_l が非常に大きいと全次元が unimportant になる"""
+    def test_very_small_eps_l_makes_all_unimportant(self, analyzer, model_and_data):
+        """8-6: eps_l が非常に小さい (1e-10) と全次元が unimportant になる
+        (全長さスケールが eps_l を上回るため ℓ_i < eps_l が常に False)
+        """
         model, X = model_and_data
         N = X.shape[-1]
-        config = ClassificationConfig(eps_l=1e9, eps_e=0.0)
+        config = ClassificationConfig(eps_l=1e-10, eps_e=0.0)
         clf = ParameterClassifier(analyzer=analyzer, config=config)
         result = clf.classify(model, X)
         assert len(result.unimportant) == N

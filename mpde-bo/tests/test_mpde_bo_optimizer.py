@@ -15,7 +15,7 @@ from mpde_bo.parameter_classifier import ClassificationConfig, ParameterClassifi
 
 @pytest.fixture
 def bounds_2d() -> Tensor:
-    return torch.stack([torch.zeros(2), torch.ones(2)])
+    return torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.double)
 
 
 @pytest.fixture
