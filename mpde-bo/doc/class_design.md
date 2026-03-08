@@ -16,15 +16,15 @@
 
 ## クラス一覧と責務
 
-| クラス | 責務 | SOLID との関係 |
-|---|---|---|
-| `MPDEBOOptimizer` | アルゴリズム全体のオーケストレーション | SRP: ループ制御のみ |
-| `GPModelManager` | GP モデルの構築・更新・ARD 長さスケール取得 | SRP: GP 状態管理のみ |
-| `ImportanceAnalyzer` | ICE / MPDE / APDE の計算（論文固有） | SRP: 重要度計算のみ |
-| `ParameterClassifier` | ARD + MPDE の閾値処理によるパラメータ分類 | SRP: 分類ロジックのみ |
-| `AcquisitionOptimizer` | 獲得関数の生成と最大化 | SRP: 最適化のみ |
-| `BenchmarkFunction` | 論文のモデル目的関数の生成と評価 | SRP: テスト関数のみ |
-| `N90Evaluator` | N90 評価指標の計算 | SRP: 評価のみ |
+| クラス                 | 責務                                        | SOLID との関係        |
+| ---------------------- | ------------------------------------------- | --------------------- |
+| `MPDEBOOptimizer`      | アルゴリズム全体のオーケストレーション      | SRP: ループ制御のみ   |
+| `GPModelManager`       | GP モデルの構築・更新・ARD 長さスケール取得 | SRP: GP 状態管理のみ  |
+| `ImportanceAnalyzer`   | ICE / MPDE / APDE の計算（論文固有）        | SRP: 重要度計算のみ   |
+| `ParameterClassifier`  | ARD + MPDE の閾値処理によるパラメータ分類   | SRP: 分類ロジックのみ |
+| `AcquisitionOptimizer` | 獲得関数の生成と最大化                      | SRP: 最適化のみ       |
+| `BenchmarkFunction`    | 論文のモデル目的関数の生成と評価            | SRP: テスト関数のみ   |
+| `N90Evaluator`         | N90 評価指標の計算                          | SRP: 評価のみ         |
 
 ---
 
@@ -178,12 +178,12 @@ optimize(f, T, train_X, train_Y):
 
 **責務**: `SingleTaskGP` の構築・フィッティング・更新、および GP 内部状態（ARD 長さスケール、事後分布）へのアクセスインターフェース。
 
-| メソッド | 対応ステップ | 内部で呼ぶ BoTorch API |
-|---|---|---|
-| `build` | ステップ 1 | `SingleTaskGP`, `fit_gpytorch_mll` |
-| `update` | ステップ 10 | `SingleTaskGP`, `fit_gpytorch_mll` |
-| `get_length_scales` | ステップ 3 | `model.covar_module.base_kernel.lengthscale` |
-| `predict` | ICE 計算時 | `model.posterior(X).mean / .variance` |
+| メソッド            | 対応ステップ | 内部で呼ぶ BoTorch API                       |
+| ------------------- | ------------ | -------------------------------------------- |
+| `build`             | ステップ 1   | `SingleTaskGP`, `fit_gpytorch_mll`           |
+| `update`            | ステップ 10  | `SingleTaskGP`, `fit_gpytorch_mll`           |
+| `get_length_scales` | ステップ 3   | `model.covar_module.base_kernel.lengthscale` |
+| `predict`           | ICE 計算時   | `model.posterior(X).mean / .variance`        |
 
 **`GPConfig`** はカーネル種別（`"matern52"` / `"rbf"`）とノイズ分散を保持する
 シンプルな dataclass。BoTorch 側のカーネルクラスへの変換は `build` 内で行う。
@@ -198,11 +198,11 @@ optimize(f, T, train_X, train_Y):
 **責務**: method.md §5 の ICE / MPDE / APDE を計算する。
 論文固有の計算であり、BoTorch の標準機能を使わないため独立して設ける。
 
-| メソッド | 数式 | 備考 |
-|---|---|---|
-| `compute_ice` | ICE^i(x_S) = f̂(x_S, x_C^i) | GP 予測平均を n×g グリッドで計算 |
-| `compute_mpde` | e_S* = max_i [max - min] over ICE | ステップ 4 の核心 |
-| `compute_apde` | ê_S = max - min over 平均 ICE | 比較用、MPDE-BO 本体では不使用 |
+| メソッド       | 数式                              | 備考                             |
+| -------------- | --------------------------------- | -------------------------------- |
+| `compute_ice`  | ICE^i(x_S) = f̂(x_S, x_C^i)        | GP 予測平均を n×g グリッドで計算 |
+| `compute_mpde` | e_S* = max_i [max - min] over ICE | ステップ 4 の核心                |
+| `compute_apde` | ê_S = max - min over 平均 ICE     | 比較用、MPDE-BO 本体では不使用   |
 
 **ステートレス設計**: モデルと観測データを引数で受け取る pure な計算クラス。
 インスタンス変数を持たないため、可視化ツールや比較実験からも単独で利用できる。
@@ -257,11 +257,11 @@ maximize(model, train_Y, fixed_features):
 **`fixed_features` について**: `optimize_acqf` の `fixed_features: dict[int, float]` パラメータを使用する
 （`fixed_features_list` ではない）。空辞書の場合は `None` を渡して通常の最適化を行う。
 
-| 獲得関数 | BoTorch クラス | パラメータ |
-|---|---|---|
-| `"EI"` | `ExpectedImprovement` | `best_f=train_Y.max()` |
-| `"UCB"` | `UpperConfidenceBound` | `beta=ucb_beta` |
-| `"PI"` | `ProbabilityOfImprovement` | `best_f=train_Y.max()` |
+| 獲得関数 | BoTorch クラス             | パラメータ             |
+| -------- | -------------------------- | ---------------------- |
+| `"EI"`   | `LogExpectedImprovement`   | `best_f=train_Y.max()` |
+| `"UCB"`  | `UpperConfidenceBound`     | `beta=ucb_beta`        |
+| `"PI"`   | `ProbabilityOfImprovement` | `best_f=train_Y.max()` |
 
 **独自抽象クラスを設けない理由**: 3種類の選択肢を `_build_acqf` 内の分岐で処理するのが最もシンプル。
 BoTorch の `AcquisitionFunction` 基底クラスが既に十分な抽象化を提供しており、
@@ -299,10 +299,10 @@ evaluate(algorithm):
 
 ## SOLID 原則の適用まとめ
 
-| 原則 | 適用箇所 | 簡略化した箇所 |
-|---|---|---|
-| **S** 単一責務 | 全クラス（各クラス 1 責務） | `sample_unimportant` は独立クラス化せず `optimize` 内に置く |
-| **O** 開放/閉鎖 | `AcquisitionConfig.type` で獲得関数を追加可能 | 独自 `AcquisitionFunction` プロトコルは作らない |
-| **L** リスコフ置換 | `N90Evaluator` が任意の callable を受け取れる | — |
-| **I** インターフェース分離 | `ImportanceAnalyzer` を `ParameterClassifier` から分離 | カーネルの独自プロトコルは作らない（BoTorch の型で十分） |
-| **D** 依存性逆転 | `MPDEBOOptimizer` はコンストラクタで各サブコンポーネントを受け取る | 全面的な DI コンテナは使わない |
+| 原則                       | 適用箇所                                                           | 簡略化した箇所                                              |
+| -------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| **S** 単一責務             | 全クラス（各クラス 1 責務）                                        | `sample_unimportant` は独立クラス化せず `optimize` 内に置く |
+| **O** 開放/閉鎖            | `AcquisitionConfig.type` で獲得関数を追加可能                      | 独自 `AcquisitionFunction` プロトコルは作らない             |
+| **L** リスコフ置換         | `N90Evaluator` が任意の callable を受け取れる                      | —                                                           |
+| **I** インターフェース分離 | `ImportanceAnalyzer` を `ParameterClassifier` から分離             | カーネルの独自プロトコルは作らない（BoTorch の型で十分）    |
+| **D** 依存性逆転           | `MPDEBOOptimizer` はコンストラクタで各サブコンポーネントを受け取る | 全面的な DI コンテナは使わない                              |

@@ -10,29 +10,29 @@ BoTorch を基盤 GP ライブラリとして使用し、MPDE-BO 固有の計算
 
 ## 依存ライブラリと役割分担
 
-| 役割 | ライブラリ |
-|---|---|
-| GP モデル・フィッティング | `botorch` / `gpytorch` |
-| カーネル定義 | `gpytorch.kernels` |
-| 獲得関数（EI, UCB, PI） | `botorch.acquisition` |
-| 獲得関数の最大化 | `botorch.optim.optimize_acqf` |
-| ICE / MPDE 計算 | 本実装（論文固有） |
-| パラメータ分類 | 本実装（論文固有） |
+| 役割                      | ライブラリ                    |
+| ------------------------- | ----------------------------- |
+| GP モデル・フィッティング | `botorch` / `gpytorch`        |
+| カーネル定義              | `gpytorch.kernels`            |
+| 獲得関数（EI, UCB, PI）   | `botorch.acquisition`         |
+| 獲得関数の最大化          | `botorch.optim.optimize_acqf` |
+| ICE / MPDE 計算           | 本実装（論文固有）            |
+| パラメータ分類            | 本実装（論文固有）            |
 
 ---
 
 ## 対応関係の概要
 
-| アルゴリズムステップ (method.md §6) | 関数 |
-|---|---|
-| ステップ 1: GP モデル構築 | `build_gp_model` |
-| ステップ 3: ARD 長さスケール取得 | `get_length_scales` |
-| ステップ 4: MPDE 計算 | `compute_ice` / `compute_mpde` |
-| ステップ 5: 重要パラメータ分類 | `classify_parameters` |
-| ステップ 6: 獲得関数最大化 | `maximize_acquisition` |
-| ステップ 7: 非重要パラメータサンプリング | `sample_unimportant` |
-| ステップ 10: GP 更新 | `update_gp_model` |
-| 全体ループ (ステップ 1–12) | `run_mpde_bo` |
+| アルゴリズムステップ (method.md §6)      | 関数                           |
+| ---------------------------------------- | ------------------------------ |
+| ステップ 1: GP モデル構築                | `build_gp_model`               |
+| ステップ 3: ARD 長さスケール取得         | `get_length_scales`            |
+| ステップ 4: MPDE 計算                    | `compute_ice` / `compute_mpde` |
+| ステップ 5: 重要パラメータ分類           | `classify_parameters`          |
+| ステップ 6: 獲得関数最大化               | `maximize_acquisition`         |
+| ステップ 7: 非重要パラメータサンプリング | `sample_unimportant`           |
+| ステップ 10: GP 更新                     | `update_gp_model`              |
+| 全体ループ (ステップ 1–12)               | `run_mpde_bo`                  |
 
 ---
 
@@ -291,7 +291,7 @@ def classify_parameters(
 
 ```python
 from botorch.acquisition import (
-    ExpectedImprovement,
+    LogExpectedImprovement,
     UpperConfidenceBound,
     ProbabilityOfImprovement,
 )
@@ -318,8 +318,8 @@ def maximize_acquisition(
 
     獲得関数 (botorch.acquisition):
         "EI" (デフォルト):
-            ExpectedImprovement(model, best_f=train_Y.max())
-            → method.md §4 の q(x|D_t) に対応
+            LogExpectedImprovement(model, best_f=train_Y.max())
+            → method.md §4 の q(x|D_t) に対応（数値安定版）
         "UCB":
             UpperConfidenceBound(model, beta=ucb_beta)
         "PI":
@@ -332,7 +332,7 @@ def maximize_acquisition(
             q=1,
             num_restarts=num_restarts,
             raw_samples=raw_samples,
-            fixed_features_list=[fixed_features],
+            fixed_features=fixed_features,
         )
 
     Returns:
@@ -503,18 +503,18 @@ def compute_n90(
 
 ### BoTorch との統合方針
 
-| BoTorch が担う部分 | 本実装が担う部分 |
-|---|---|
-| GP フィッティング (`fit_gpytorch_mll`) | ICE / MPDE 計算 |
-| カーネル定義 (`gpytorch.kernels`) | パラメータ重要度分類 |
-| 獲得関数 (`botorch.acquisition`) | 探索空間の分割・結合 |
-| 獲得関数最大化 (`optimize_acqf`) | ベンチマーク関数生成 |
-| 事後分布取得 (`model.posterior`) | N90 評価 |
+| BoTorch が担う部分                     | 本実装が担う部分     |
+| -------------------------------------- | -------------------- |
+| GP フィッティング (`fit_gpytorch_mll`) | ICE / MPDE 計算      |
+| カーネル定義 (`gpytorch.kernels`)      | パラメータ重要度分類 |
+| 獲得関数 (`botorch.acquisition`)       | 探索空間の分割・結合 |
+| 獲得関数最大化 (`optimize_acqf`)       | ベンチマーク関数生成 |
+| 事後分布取得 (`model.posterior`)       | N90 評価             |
 
 ### `fixed_features` による次元固定
 
 ステップ 6–7 の重要/非重要パラメータの分離は、
-`optimize_acqf(..., fixed_features_list=[{dim: val}])` で実現する。
+`optimize_acqf(..., fixed_features={dim: val})` で実現する。
 これにより BoTorch の最適化ルーティンをそのまま活用しつつ、
 MPDE-BO の探索空間分割を自然に表現できる。
 

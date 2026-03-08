@@ -72,7 +72,11 @@ class N90Evaluator:
                 grid_size=self._grid_size,
                 generator=self._gen,
             )
-            train_X, train_Y = self._init_data(N, M)
+            train_X = self._init_X(N, M)
+            train_Y = torch.tensor(
+                [[f(x)] for x in train_X],
+                dtype=torch.double,
+            )
             result = algorithm(f, self._budget, train_X, train_Y)
             t = self._steps_to_reach(result, f.optimal_value)
             steps_to_threshold.append(t)
@@ -80,12 +84,9 @@ class N90Evaluator:
         steps_tensor = torch.tensor(steps_to_threshold, dtype=torch.double)
         return torch.quantile(steps_tensor, 0.9).item()
 
-    def _init_data(self, N: int, M: float) -> tuple[Tensor, Tensor]:
-        """初期観測点を一様サンプリングで生成する。"""
-        X = torch.rand(_N_INIT, N, dtype=torch.double, generator=self._gen) * M
-        # 目的関数値は algorithm 呼び出し側で評価されるため、ここでは仮置き
-        Y = torch.zeros(_N_INIT, 1, dtype=torch.double)
-        return X, Y
+    def _init_X(self, N: int, M: float) -> Tensor:
+        """初期観測点を一様サンプリングで生成する。shape: (_N_INIT, N)"""
+        return torch.rand(_N_INIT, N, dtype=torch.double, generator=self._gen) * M
 
     def _steps_to_reach(self, result: BOResult, optimal_value: float) -> int:
         """最適値の threshold_ratio 以上を初めて達成した評価ステップ数を返す。"""
