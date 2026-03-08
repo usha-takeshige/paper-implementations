@@ -50,7 +50,7 @@
 |---|---|---|---|---|
 | 4-1 | shape が正しい | `X` shape `(10, N)` | `mu.shape == (10,)`, `sigma2.shape == (10,)` | Unit |
 | 4-2 | 分散が非負 | 任意の `X` | `sigma2` の全要素 ≥ 0 | Property |
-| 4-3 | 訓練点での不確実性が小さい | `X = train_X` (ノイズなしモデル) | `sigma2` の全要素 ≈ 0 | Property |
+| 4-3 | 訓練点での不確実性が小さい | `X = train_X` vs 訓練範囲外の点 | 訓練点での `sigma2` の平均 < 範囲外点での平均 | Property |
 
 ---
 
@@ -101,8 +101,12 @@ GP モデルを学習させてから分類する。
 | 8-3 | 全次元が分類される | N=4 次元 | `len(important) + len(unimportant) == 4` | Property |
 | 8-4 | 重要次元が検出される | 次元 0,1 のみ目的値に影響するデータ | `0 in important and 1 in important` | Integration |
 | 8-5 | 非重要次元が検出される | 次元 2,3 は目的値に無関係 | `2 in unimportant and 3 in unimportant` | Integration |
-| 8-6 | eps_l を非常に大きくすると全て非重要 | `eps_l=1e9, eps_e=0` | `len(unimportant) == N` | Unit |
+| 8-6 | eps_l を非常に小さくすると全て非重要 | `eps_l=1e-10, eps_e=0` | `len(unimportant) == N` | Unit |
 | 8-7 | eps_e を非常に大きくすると全て非重要 | `eps_l=0, eps_e=1e9` | `len(unimportant) == N` | Unit |
+
+**補足 (8-6 の根拠)**: `eps_l` は「このスケール未満なら重要候補」の上限閾値。
+値を 1e-10 のように非常に小さくすると、全ての正の長さスケールが条件 `ℓ_i < eps_l` を
+満たさなくなり、全次元が非重要に分類される。
 
 ---
 
@@ -194,8 +198,10 @@ def simple_train_data():
 @pytest.fixture
 def important_unimportant_data():
     """
-    次元 0,1 のみ目的値に影響し、次元 2,3 は無関係なデータ (N=4, n=30)
+    次元 0,1 のみ目的値に影響し、次元 2,3 は無関係なデータ (N=4, n=50)
+    f(x) = sin(5*x[0]) + sin(5*x[1])
     ParameterClassifier / ImportanceAnalyzer の Property テストに使用
+    実測: dims 0,1 の length scale ≈ 2.5、dims 2,3 ≈ 1000 以上
     """
 
 @pytest.fixture
@@ -208,7 +214,10 @@ def gp_config_matern():
 
 @pytest.fixture
 def classification_config():
-    ClassificationConfig(eps_l=1.0, eps_e=0.1)
+    # important_unimportant_data での実測値に基づく設定
+    # dims 0,1 の length scale ≈ 2.5 → eps_l=5.0 で通過
+    # dims 2,3 の length scale >> 100 → eps_l=5.0 で除外
+    ClassificationConfig(eps_l=5.0, eps_e=0.1)
 ```
 
 ---

@@ -73,6 +73,8 @@ classDiagram
 
     class GPModelManager {
         -GPConfig _config
+        -Tensor _train_X
+        -Tensor _train_Y
         +build(train_X, train_Y) SingleTaskGP
         +update(model, new_X, new_Y) SingleTaskGP
         +get_length_scales(model) Tensor
@@ -103,9 +105,15 @@ classDiagram
         -int _n_important
         -int _n_unimportant
         -int _grid_size
-        -float _optimal_value
-        +__call__(x) float
+        -list _peak_centers
+        -list _peak_widths
+        +n_important() int
+        +n_unimportant() int
+        +grid_size() int
         +optimal_value() float
+        +peak_centers() list~Tensor~
+        +peak_widths() list~float~
+        +__call__(x) float
     }
 
     class N90Evaluator {
@@ -114,9 +122,12 @@ classDiagram
         -float _threshold_ratio
         -int _n_important
         -int _n_unimportant
-        -Generator|None _generator
+        -int _grid_size
+        -Generator|None _gen
+        +budget() int
         +evaluate(algorithm) float
-        -_run_single(algorithm, f) int
+        -_init_data(N, M) tuple~Tensor_Tensor~
+        -_steps_to_reach(result, optimal_value) int
     }
 
     %% ── 依存関係 ──────────────────────────────────────────────
@@ -177,6 +188,9 @@ optimize(f, T, train_X, train_Y):
 **`GPConfig`** はカーネル種別（`"matern52"` / `"rbf"`）とノイズ分散を保持する
 シンプルな dataclass。BoTorch 側のカーネルクラスへの変換は `build` 内で行う。
 
+**内部状態 (`_train_X`, `_train_Y`)**: `update` で再構築するときに前回の訓練データを参照する必要があるため、
+`build`/`update` 呼び出し後に最新の訓練データを内部保持する。
+
 ---
 
 ### `ImportanceAnalyzer`
@@ -202,7 +216,7 @@ optimize(f, T, train_X, train_Y):
 
 ```
 classify(model, train_X):
-    lengths = _gp_manager.get_length_scales(model)    ← GPModelManager に委譲
+    lengths = model.covar_module.base_kernel.lengthscale.squeeze(0).detach()
     for i in 0..N:
         mpde_i = _analyzer.compute_mpde(model, train_X, [i])
         if lengths[i] < eps_l and mpde_i > eps_e:
@@ -210,6 +224,11 @@ classify(model, train_X):
         else:
             → unimportant
 ```
+
+**長さスケールの取得**: `GPModelManager.get_length_scales` への委譲ではなく、
+`model.covar_module.base_kernel.lengthscale` を直接参照する。
+`ParameterClassifier` は `GPModelManager` インスタンスを持たず、
+モデルオブジェクトからデータを取得するのが自然なため。
 
 **`ImportanceAnalyzer` との分離理由（SRP）**:
 `ImportanceAnalyzer` は「数値を計算する」責務、
@@ -226,13 +245,17 @@ classify(model, train_X):
 ```
 maximize(model, train_Y, fixed_features):
     acqf = _build_acqf(model, train_Y)   # EI / UCB / PI を生成
+    ff = fixed_features if fixed_features else None
     candidate, _ = optimize_acqf(
         acqf, bounds=_bounds, q=1,
-        fixed_features_list=[fixed_features],
+        fixed_features=ff,               # 非重要次元を固定
         num_restarts=..., raw_samples=...
     )
     return candidate.squeeze(0)           # shape (N,)
 ```
+
+**`fixed_features` について**: `optimize_acqf` の `fixed_features: dict[int, float]` パラメータを使用する
+（`fixed_features_list` ではない）。空辞書の場合は `None` を渡して通常の最適化を行う。
 
 | 獲得関数 | BoTorch クラス | パラメータ |
 |---|---|---|
