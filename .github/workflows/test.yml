@@ -15,13 +15,12 @@ jobs:
         id: filter
         with:
           filters: |
-            operation-test:
+            99-operation-test:
               - '99-operation-test/**'
-            rbf-gen:
+            01-rbf-gen:
               - '01-rbf-gen/**'
-            mpde-bo:
+            02-mpde-bo:
               - '02-mpde-bo/**'
-
 
   test:
     needs: detect-changes
