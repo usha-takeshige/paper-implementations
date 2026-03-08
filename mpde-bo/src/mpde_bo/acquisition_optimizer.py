@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import torch
 from botorch.acquisition import (
-    ExpectedImprovement,
+    LogExpectedImprovement,
     ProbabilityOfImprovement,
     UpperConfidenceBound,
 )
@@ -85,11 +85,11 @@ class AcquisitionOptimizer:
 
     def _build_acqf(
         self, model: SingleTaskGP, train_Y: Tensor
-    ) -> ExpectedImprovement | UpperConfidenceBound | ProbabilityOfImprovement:
+    ) -> LogExpectedImprovement | UpperConfidenceBound | ProbabilityOfImprovement:
         """設定に応じた BoTorch 獲得関数インスタンスを生成する。"""
         best_f = train_Y.max()
         if self._config.type == "EI":
-            return ExpectedImprovement(model=model, best_f=best_f)
+            return LogExpectedImprovement(model=model, best_f=best_f)
         elif self._config.type == "UCB":
             return UpperConfidenceBound(model=model, beta=self._config.ucb_beta)
         elif self._config.type == "PI":
