@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mpde-bo"
+version = "0.1.0"
+description = "MPDE-BO: Bayesian Optimization with Maximum Partial Dependence Effect"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "torch",
+  "botorch",
+  "gpytorch",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mpde_bo"]
