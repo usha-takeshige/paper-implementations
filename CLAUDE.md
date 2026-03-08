@@ -6,6 +6,8 @@
 - ルートレベルの設定ファイルは読み取り可能だが、変更は慎重に
 
 ## ディレクトリ構造
+- `<paper-name>/doc/` : ドキュメント
+- `<paper-name>/example/` : 使用例
 - `<paper-name>/src/` : 実装コード
 - `<paper-name>/tests/` : テストコード
 - `<paper-name>/pyproject.toml` : パッケージ設定
@@ -25,6 +27,11 @@ dev = [
   "pytest-cov",
 ]
 ```
+
+## コーディング規約（Python）
+- PEP8に準拠する
+- ドックストリングを必ず記載する。クラスには詳細を、メソッドは完結に記載する。
+- 型ヒントは必ず記載する。
 
 ## ブランチ・PRルール
 - ブランチ名: `<issue-number>-<paper-name>/<feature>`

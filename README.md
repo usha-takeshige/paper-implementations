@@ -11,6 +11,13 @@
 
 データが極端に少ない設計最適化問題において、専門家のドメイン知識をサロゲートモデルに体系的に組み込むフレームワーク「RBF-Gen」を提案した論文。放射基底関数（radial basis function: RBF）の零空間を生成ネットワークで探索することで、「データを必ず補間しつつ、物理的に妥当な関数を生成する」という両立を実現している。
 
+### mpde-bo
+**"Sparse modeling based Bayesian optimization for experimental design"**
+(Ryuji Masui, Unseo Lee, Ryo Nakayama and Taro Hitosugi)
+
+[査読付きの雑誌](https://pubs.rsc.org/en/content/articlelanding/2025/ma/d5ma00346f)
+
+各パラメータの各データに対するICE（Individual Conditional Expectation）幅の最大値を、目的関数の単位で設定した閾値と比較することで、研究者が直感的に設定できる形で探索軸を削れるようにしようというアイディア
 
 ## リポジトリ構成
 
