@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(*.py)",
+      "Edit(*.md)",
+      "Bash(uv run pytest*)",
+      "Bash(uv sync*)",
+      "Bash(uv add*)",
+      "Bash(git status)",
+      "Bash(git diff*)"
+    ]
+  }
+}
