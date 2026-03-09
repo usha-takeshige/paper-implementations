@@ -71,6 +71,34 @@ dev = [
 EOF
 echo "  created $PROJECT_NAME/pyproject.toml"
 
+# --- Update .github/workflows/test.yml filters ---
+WORKFLOW_FILE="$REPO_ROOT/.github/workflows/test.yml"
+if [[ -f "$WORKFLOW_FILE" ]]; then
+  python3 << PYEOF
+import re
+
+filepath = "$WORKFLOW_FILE"
+project_name = "$PROJECT_NAME"
+
+with open(filepath) as f:
+    content = f.read()
+
+entry = "            {}:\n              - '{}/**'\n".format(project_name, project_name)
+
+matches = list(re.finditer(r"              - '[^']+/\*\*'\n", content))
+if matches:
+    insert_pos = matches[-1].end()
+    content = content[:insert_pos] + entry + content[insert_pos:]
+    with open(filepath, "w") as f:
+        f.write(content)
+    print("  updated .github/workflows/test.yml")
+else:
+    print("  Warning: Could not find filter insertion point in test.yml")
+PYEOF
+else
+  echo "  Warning: '$WORKFLOW_FILE' not found. Skipping."
+fi
+
 echo ""
 echo "Done. Next steps:"
 echo "  cd $PROJECT_NAME && uv sync"
