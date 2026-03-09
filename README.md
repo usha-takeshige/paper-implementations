@@ -42,8 +42,16 @@ paper-implementations/
 - 共通のルールに関してはルートディレクトリで管理し、個別のルールに関してはプロジェクトごとのディレクトリで管理を行う
 
 ### 新しい論文を追加するとき
-1. ルート直下に`id-<paper-name>`という形式でディレクトリを作成する
-2. `.github/workflows/test.yml`の`filters`に該当のディレクトリを追加する
+1. スクリプトを実行する: `bash scripts/new-project.sh <id>-<paper-name>`
+   - 標準ディレクトリ構造（`src/`, `tests/`, `doc/`, `example/`）と `pyproject.toml` を自動生成
+   - `.github/workflows/test.yml` の `filters` に該当ディレクトリを自動追加
+```bash
+scripts/new-project.sh <id>-<paper-name>
+```
+2. `cd <id>-<paper-name> && uv sync` で Python 環境を構築する
+```bash
+cd <id>-<paper-name> && uv sync
+```
 3. AIエージェントを用いた実装を行うときには、該当の論文のディレクトリに入った状態で作業を行う
 
 ※ 運用のテストを行うときには、`99-operation-test`ディレクトリを使用する。
