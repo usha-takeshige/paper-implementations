@@ -45,13 +45,7 @@ paper-implementations/
 1. スクリプトを実行する: `bash scripts/new-project.sh <id>-<paper-name>`
    - 標準ディレクトリ構造（`src/`, `tests/`, `doc/`, `example/`）と `pyproject.toml` を自動生成
    - `.github/workflows/test.yml` の `filters` に該当ディレクトリを自動追加
-```bash
-scripts/new-project.sh <id>-<paper-name>
-```
 2. `cd <id>-<paper-name> && uv sync` で Python 環境を構築する
-```bash
-cd <id>-<paper-name> && uv sync
-```
 3. AIエージェントを用いた実装を行うときには、該当の論文のディレクトリに入った状態で作業を行う
 
 ※ 運用のテストを行うときには、`99-operation-test`ディレクトリを使用する。
