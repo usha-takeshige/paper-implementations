@@ -38,9 +38,8 @@ description: |
 
 ## 入力
 
-- 論文のMarkdownファイル（`/doc/full_paper.md`）またはアルゴリズム抽出ドキュメント（`/doc/paper_method.md`）
+- アルゴリズム抽出ドキュメント（`/doc/paper_method.md`）
 - 実装コードファイル（`src/**`）
-- ファイルはユーザーが `/doc/formula_code_mapping.md` に配置する
 
 ---
 
@@ -48,6 +47,7 @@ description: |
 
 以下の構造でMarkdownを出力する。
 コードに該当箇所がない場合は「実装なし」、論文との差異がある場合は ⚠️ フラグを立てる。
+出力先：`/doc/formula_code_mapping.md` 
 
 ---
 
@@ -106,8 +106,7 @@ description: |
 ## 処理手順
 
 1. **ファイルの読み込み**
-   - `view` ツールで論文Markdown（`/doc/full_paper.md`）とコードファイル（`src/**`）を読み込む。
-   - `/doc/full_paper.md`が存在する場合は、そちらの「記号・変数一覧」と「アルゴリズムステップ」を優先して使用する。
+   - `view` ツールでアルゴリズム抽出Markdown（`/doc/paper_method.md`）とコードファイル（`src/**`）を読み込む。
 
 2. **記号・変数の突き合わせ**
    - 論文の記号一覧とコードの変数名を照合する。
