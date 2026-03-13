@@ -24,6 +24,12 @@ markers = [
     "theory: 論文の理論的性質が成立するかのテスト（数学的保証）",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
+
 [project.optional-dependencies]
 dev = [
   "pytest",
