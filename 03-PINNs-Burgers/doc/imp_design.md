@@ -9,6 +9,7 @@
 Algorithm 1（PDE 残差計算）を独立したクラスとして分離し，Algorithm 2（順問題）と Algorithm 3（逆問題）の両ソルバーが共通利用する構造とする．
 順問題と逆問題はトレーニングループの骨格が同一で Step 1（$\nu$ の扱い）と Step 9（更新対象）のみが異なるため，Template Method パターンを適用して差分を最小化する．
 ハイパーパラメータ・問題設定はすべてイミュータブルなデータクラスで管理し，設定の変更が意図せずソルバーに副作用を与えないようにする．
+データクラスには Pydantic の `BaseModel` を使用し，フィールドの型バリデーションを自動的に行う．各フィールドには `Field(description=...)` で論文上の意味を明記する．イミュータブルなデータクラスは `model_config = ConfigDict(frozen=True)` で不変性を保証する．
 
 ---
 
@@ -55,13 +56,13 @@ class BurgersPINNSolver:
 
 | クラス名 | 種別 | 責務（単一責任の原則） | 対応する論文の概念 |
 |---------|------|---------------------|-----------------|
-| `PDEConfig` | データクラス（frozen） | 問題設定値（ν, ドメイン, 初期条件）の保持 | Section 2（支配方程式・境界条件） |
-| `NetworkConfig` | データクラス（frozen） | ネットワーク構造設定（層数, 幅, 活性化関数）の保持 | 式(5)，Section 6.1 |
-| `TrainingConfig` | データクラス（frozen） | 学習設定（N_u, N_f, lr, エポック数）の保持 | Algorithm 2/3 Step 2，Section 6.1 |
-| `BoundaryData` | データクラス | 初期・境界条件データ点 $(t_u^i, x_u^i, u^i)$ の保持 | 式(8) |
-| `CollocationPoints` | データクラス | コロケーション点 $(t_f^j, x_f^j)$ の保持 | 式(9) |
-| `ForwardResult` | データクラス（frozen） | 順問題の結果（θ*, 損失履歴）の保持 | Algorithm 2 出力 |
-| `InverseResult` | データクラス（frozen） | 逆問題の結果（θ*, ν*, 損失履歴）の保持 | Algorithm 3 出力 |
+| `PDEConfig` | Pydantic モデル（frozen） | 問題設定値（ν, ドメイン, 初期条件）の保持 | Section 2（支配方程式・境界条件） |
+| `NetworkConfig` | Pydantic モデル（frozen） | ネットワーク構造設定（層数, 幅, 活性化関数）の保持 | 式(5)，Section 6.1 |
+| `TrainingConfig` | Pydantic モデル（frozen） | 学習設定（N_u, N_f, lr, エポック数）の保持 | Algorithm 2/3 Step 2，Section 6.1 |
+| `BoundaryData` | Pydantic モデル | 初期・境界条件データ点 $(t_u^i, x_u^i, u^i)$ の保持 | 式(8) |
+| `CollocationPoints` | Pydantic モデル | コロケーション点 $(t_f^j, x_f^j)$ の保持 | 式(9) |
+| `ForwardResult` | Pydantic モデル（frozen） | 順問題の結果（θ*, 損失履歴）の保持 | Algorithm 2 出力 |
+| `InverseResult` | Pydantic モデル（frozen） | 逆問題の結果（θ*, ν*, 損失履歴）の保持 | Algorithm 3 出力 |
 | `PINN` | 具象クラス（nn.Module） | ネットワーク $u_\theta(t,x)$ の順伝播・Xavier 初期化 | 式(5)，Algorithm 2 Step 1 |
 | `PDEResidualComputer` | 具象クラス | Algorithm 1：自動微分による PDE 残差 $f$ の計算 | 式(6)，Algorithm 1 |
 | `LossFunction` | 具象クラス | $L = L_{\text{data}} + L_{\text{phys}}$ の計算 | 式(7)(8)(9) |
@@ -76,18 +77,22 @@ class BurgersPINNSolver:
 
 #### `PDEConfig`
 
-**種別**：データクラス（frozen）
+**種別**：Pydantic モデル（frozen）
 **責務**：Burgers 方程式の問題設定値を保持する
 **対応する論文の概念**：式(1)(2)(3)(4)，Section 2
 
 ```python
-@dataclass(frozen=True)
-class PDEConfig:
-    nu: float          # ν：動粘性係数（デフォルト 0.01/π）
-    x_min: float       # x ドメイン下限（-1.0）
-    x_max: float       # x ドメイン上限（1.0）
-    t_min: float       # t ドメイン下限（0.0）
-    t_max: float       # t ドメイン上限（1.0）
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class PDEConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    nu: float = Field(description="ν：動粘性係数（デフォルト 0.01/π）")
+    x_min: float = Field(description="x ドメイン下限（-1.0）")
+    x_max: float = Field(description="x ドメイン上限（1.0）")
+    t_min: float = Field(description="t ドメイン下限（0.0）")
+    t_max: float = Field(description="t ドメイン上限（1.0）")
 ```
 
 **SOLIDチェック**
@@ -99,15 +104,19 @@ class PDEConfig:
 
 #### `NetworkConfig`
 
-**種別**：データクラス（frozen）
+**種別**：Pydantic モデル（frozen）
 **責務**：ネットワーク構造に関するハイパーパラメータを保持する
 **対応する論文の概念**：式(5)，Section 6.1
 
 ```python
-@dataclass(frozen=True)
-class NetworkConfig:
-    n_hidden_layers: int   # L：隠れ層数（デフォルト 4）
-    n_neurons: int         # N：各層のニューロン数（デフォルト 20）
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class NetworkConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    n_hidden_layers: int = Field(description="L：隠れ層数（デフォルト 4）")
+    n_neurons: int = Field(description="N：各層のニューロン数（デフォルト 20）")
 ```
 
 **備考**：活性化関数は論文で tanh に固定されているため設定項目に含めない
@@ -121,18 +130,22 @@ class NetworkConfig:
 
 #### `TrainingConfig`
 
-**種別**：データクラス（frozen）
+**種別**：Pydantic モデル（frozen）
 **責務**：学習に関するハイパーパラメータを保持する
 **対応する論文の概念**：Algorithm 2 Step 2，Section 6.1
 
 ```python
-@dataclass(frozen=True)
-class TrainingConfig:
-    n_u: int              # N_u：初期・境界条件データ点数（デフォルト 100）
-    n_f: int              # N_f：コロケーション点数（デフォルト 10000）
-    lr: float             # η：学習率
-    epochs_adam: int      # E_Adam：Adam フェーズのエポック数
-    epochs_lbfgs: int     # E_LBFGS：L-BFGS フェーズのエポック数（逆問題では不使用）
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class TrainingConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    n_u: int = Field(description="N_u：初期・境界条件データ点数（デフォルト 100）")
+    n_f: int = Field(description="N_f：コロケーション点数（デフォルト 10000）")
+    lr: float = Field(description="η：学習率")
+    epochs_adam: int = Field(description="E_Adam：Adam フェーズのエポック数")
+    epochs_lbfgs: int = Field(description="E_LBFGS：L-BFGS フェーズのエポック数（逆問題では不使用）")
 ```
 
 **SOLIDチェック**
@@ -144,16 +157,20 @@ class TrainingConfig:
 
 #### `BoundaryData`
 
-**種別**：データクラス
+**種別**：Pydantic モデル
 **責務**：初期・境界条件データ点 $\{(t_u^i, x_u^i, u^i)\}$ を保持する
 **対応する論文の概念**：式(8)
 
 ```python
-@dataclass
-class BoundaryData:
-    t: torch.Tensor   # 形状 (N_u, 1)
-    x: torch.Tensor   # 形状 (N_u, 1)
-    u: torch.Tensor   # 形状 (N_u, 1)
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class BoundaryData(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    t: torch.Tensor = Field(description="時間座標，形状 (N_u, 1)")
+    x: torch.Tensor = Field(description="空間座標，形状 (N_u, 1)")
+    u: torch.Tensor = Field(description="観測値 u(t, x)，形状 (N_u, 1)")
 ```
 
 **SOLIDチェック**
@@ -164,15 +181,19 @@ class BoundaryData:
 
 #### `CollocationPoints`
 
-**種別**：データクラス
+**種別**：Pydantic モデル
 **責務**：コロケーション点 $\{(t_f^j, x_f^j)\}$ を保持する
 **対応する論文の概念**：式(9)
 
 ```python
-@dataclass
-class CollocationPoints:
-    t: torch.Tensor   # 形状 (N_f, 1)
-    x: torch.Tensor   # 形状 (N_f, 1)
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class CollocationPoints(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    t: torch.Tensor = Field(description="時間座標，形状 (N_f, 1)")
+    x: torch.Tensor = Field(description="空間座標，形状 (N_f, 1)")
 ```
 
 **SOLIDチェック**
@@ -183,31 +204,39 @@ class CollocationPoints:
 
 #### `ForwardResult`
 
-**種別**：データクラス（frozen）
+**種別**：Pydantic モデル（frozen）
 **責務**：順問題の最適化結果を保持する
 **対応する論文の概念**：Algorithm 2 出力
 
 ```python
-@dataclass(frozen=True)
-class ForwardResult:
-    model: PINN                   # 学習済みネットワーク θ*
-    loss_history: list[float]     # 損失値の履歴
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class ForwardResult(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    model: PINN = Field(description="学習済みネットワーク θ*")
+    loss_history: list[float] = Field(description="エポックごとの総損失値の履歴")
 ```
 
 ---
 
 #### `InverseResult`
 
-**種別**：データクラス（frozen）
+**種別**：Pydantic モデル（frozen）
 **責務**：逆問題の最適化結果（θ* と ν*）を保持する
 **対応する論文の概念**：Algorithm 3 出力，式(11)
 
 ```python
-@dataclass(frozen=True)
-class InverseResult:
-    model: PINN                   # 学習済みネットワーク θ*
-    nu: float                     # 推定された動粘性係数 ν*
-    loss_history: list[float]     # 損失値の履歴
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+class InverseResult(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    model: PINN = Field(description="学習済みネットワーク θ*")
+    nu: float = Field(description="同定された動粘性係数 ν*（式(11) の推定値）")
+    loss_history: list[float] = Field(description="エポックごとの総損失値の履歴")
 ```
 
 ---
@@ -562,6 +591,7 @@ classDiagram
 
 | ライブラリ | 用途 | 対応する数式・処理 |
 |-----------|------|----------------|
+| `pydantic` | データクラスの型バリデーション・`Field(description=...)` によるフィールド定義 | 全データクラス（`PDEConfig`, `NetworkConfig`, `TrainingConfig` 等） |
 | `torch` | テンソル演算・自動微分・ニューラルネットワーク | 式(5)(6)，Algorithm 1 Step 1–6 |
 | `torch.nn` | `nn.Module`，`nn.Linear`，`nn.Tanh` によるネットワーク構築 | 式(5) |
 | `torch.optim` | Adam オプティマイザ | Algorithm 2 Step 2（Phase 1）/ Algorithm 3 Step 2 |
