@@ -3,7 +3,11 @@ name = "03-PINNs-Burgers"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "pydantic>=2.12.5",
     "scipy>=1.17.1",
+    "torch>=2.10.0",
 ]
 
 [build-system]
@@ -15,6 +19,10 @@ packages = ["src/03_PINNs_Burgers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "algorithm: アルゴリズム実装の正確性テスト（計算の正しさ）",
+    "theory: 論文の理論的性質が成立するかのテスト（数学的保証）",
+]
 
 [project.optional-dependencies]
 dev = [
