@@ -1,11 +1,12 @@
-"""振る舞いテスト：グラフ出力による確認（BHV-01〜05）。
+"""Behavior tests: visual verification of PINNs training results (BHV-01 to BHV-05).
 
-自動判定が困難な視覚的・定性的な性質をグラフで出力し，人間が目視確認する。
+Outputs graphs for human inspection of qualitative properties that cannot be
+verified automatically.
 
-実行方法:
+Usage:
     uv run python tests/check_behavior.py
 
-出力先:
+Output:
     tests/behavior_output/*.png
 """
 
@@ -46,11 +47,11 @@ NU_TRUE = 0.01 / math.pi
 
 
 # ---------------------------------------------------------------------------
-# データ読み込みとサンプリング
+# Data loading and sampling
 # ---------------------------------------------------------------------------
 
 def load_data(path: str = "data/burgers_shock.mat") -> tuple:
-    """burgers_shock.mat を読み込みグリッドと参照解を返す。
+    """Load burgers_shock.mat and return grid arrays and reference solution.
 
     Returns:
         (x_grid, t_grid, X_mesh, T_mesh, usol)
@@ -71,19 +72,19 @@ def sample_boundary_data(
     n_u: int,
     seed: int = 0,
 ) -> BoundaryData:
-    """初期・境界条件データを n_u 点ランダムサンプリングする。
+    """Randomly sample n_u points from initial and boundary conditions.
 
-    初期条件（t=0）・境界条件（x=±1）を全点収集してからサンプリングする。
-    順問題で使用する。
+    Collects all initial condition (t=0) and boundary condition (x=+-1)
+    points, then draws n_u samples. Used for the forward problem.
     """
     rng = np.random.default_rng(seed)
 
-    # 初期条件: u(0, x) = -sin(πx)
+    # Initial condition: u(0, x) = -sin(pi*x)
     t_ic = np.zeros((len(x_grid), 1), dtype=np.float32)
     x_ic = x_grid
     u_ic = usol[:, [0]]
 
-    # 境界条件: u(t, -1) = 0, u(t, 1) = 0
+    # Boundary conditions: u(t, -1) = 0, u(t, 1) = 0
     t_bc = t_grid
     x_bc_left = np.full_like(t_grid, x_grid[0, 0])
     u_bc_left = usol[[0], :].T
@@ -111,9 +112,10 @@ def sample_scattered_observations(
     n_u: int,
     seed: int = 2,
 ) -> BoundaryData:
-    """全領域から散在観測データを n_u 点ランダムサンプリングする。
+    """Randomly sample n_u scattered observation points from the full domain.
 
-    逆問題では境界・初期条件だけでなく全領域の観測値が必要。
+    The inverse problem requires observations from the entire domain,
+    not just boundary and initial conditions.
     """
     rng = np.random.default_rng(seed)
     n_total = X_mesh.size
@@ -136,7 +138,7 @@ def sample_collocation(
     n_f: int,
     seed: int = 1,
 ) -> CollocationPoints:
-    """コロケーション点をドメイン内にランダムサンプリングする。"""
+    """Randomly sample n_f collocation points from the interior of the domain."""
     rng = np.random.default_rng(seed)
     x_min, x_max = float(x_grid.min()), float(x_grid.max())
     t_min, t_max = float(t_grid.min()), float(t_grid.max())
@@ -146,11 +148,11 @@ def sample_collocation(
 
 
 # ---------------------------------------------------------------------------
-# 共通設定
+# Common configuration
 # ---------------------------------------------------------------------------
 
 PDE_CFG = PDEConfig(nu=NU_TRUE, x_min=-1.0, x_max=1.0, t_min=0.0, t_max=1.0)
-NET_CFG = NetworkConfig(n_hidden_layers=4, n_neurons=20)
+NET_CFG = NetworkConfig(n_hidden_layers=5, n_neurons=20)
 TRAIN_CFG = TrainingConfig(
     n_u=100,
     n_f=10_000,
@@ -163,34 +165,34 @@ INV_TRAIN_CFG = TrainingConfig(
     n_f=10_000,
     lr=1e-3,
     epochs_adam=2_000,
-    epochs_lbfgs=0,  # 逆問題では L-BFGS 不使用
+    epochs_lbfgs=0,  # L-BFGS is not used for the inverse problem
 )
 
 
 # ---------------------------------------------------------------------------
-# BHV-01: 損失収束曲線
+# BHV-01: Loss convergence curve
 # ---------------------------------------------------------------------------
 
 def bhv01_loss_curve(loss_history: list[float], title_suffix: str = "") -> None:
-    """BHV-01: L_total の収束曲線を対数スケールでプロットする。
+    """BHV-01: Plot L_total convergence on a log scale.
 
-    確認観点:
-        損失が学習終了時に初期値の 1/10 以下に収束していること。
+    Check: L_total at the end of training should be less than 1/10 of the
+    initial value.
     """
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.semilogy(loss_history, linewidth=1.0)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("L_total (log scale)")
     ax.set_title(
-        f"BHV-01: 損失収束曲線{title_suffix}\n"
-        "確認観点: 学習終了時の L_total が初期値の 1/10 以下に収束すること"
+        f"BHV-01: Loss convergence curve{title_suffix}\n"
+        "Check: final L_total should be < 1/10 of the initial value"
     )
     ax.grid(True, which="both", alpha=0.3)
 
     if len(loss_history) > 1:
         ratio = loss_history[-1] / (loss_history[0] + 1e-12)
         ax.annotate(
-            f"最終損失 / 初期損失 = {ratio:.3f}",
+            f"final / initial = {ratio:.3f}",
             xy=(len(loss_history) - 1, loss_history[-1]),
             xytext=(len(loss_history) * 0.6, max(loss_history) * 0.5),
             arrowprops=dict(arrowstyle="->", color="red"),
@@ -201,11 +203,11 @@ def bhv01_loss_curve(loss_history: list[float], title_suffix: str = "") -> None:
     fig.tight_layout()
     fig.savefig(fname, dpi=120)
     plt.close(fig)
-    print(f"  [BHV-01] 保存: {fname}")
+    print(f"  [BHV-01] saved: {fname}")
 
 
 # ---------------------------------------------------------------------------
-# BHV-02: 推定解と参照解のヒートマップ
+# BHV-02: Predicted solution vs reference solution heatmaps
 # ---------------------------------------------------------------------------
 
 def bhv02_solution_heatmap(
@@ -216,10 +218,9 @@ def bhv02_solution_heatmap(
     t_grid: np.ndarray,
     x_grid: np.ndarray,
 ) -> None:
-    """BHV-02: 推定解 u_theta と参照解 usol の等高線ヒートマップ。
+    """BHV-02: Side-by-side heatmaps of predicted u_theta and reference usol.
 
-    確認観点:
-        衝撃波の位置・形状が参照解と概ね一致すること。
+    Check: shock wave position and shape should visually match the reference.
     """
     x_flat = X_mesh.ravel().reshape(-1, 1).astype(np.float32)
     t_flat = T_mesh.ravel().reshape(-1, 1).astype(np.float32)
@@ -233,7 +234,7 @@ def bhv02_solution_heatmap(
     vmax = float(usol.max())
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-    for ax, data, label in zip(axes, [u_pred, usol], ["推定解 u_θ", "参照解 u_ref"]):
+    for ax, data, label in zip(axes, [u_pred, usol], ["Predicted u_theta", "Reference u_ref"]):
         im = ax.pcolormesh(
             t_grid.ravel(), x_grid.ravel(), data,
             cmap="RdBu_r", vmin=vmin, vmax=vmax, shading="auto",
@@ -244,18 +245,18 @@ def bhv02_solution_heatmap(
         ax.set_title(label)
 
     fig.suptitle(
-        "BHV-02: 推定解 vs 参照解（論文 Figure 1 に対応）\n"
-        "確認観点: 衝撃波の位置・形状が概ね一致すること"
+        "BHV-02: Predicted solution vs reference solution (cf. Paper Figure 1)\n"
+        "Check: shock wave position and shape should visually match"
     )
     fname = os.path.join(OUTPUT_DIR, "bhv02_solution_heatmap.png")
     fig.tight_layout()
     fig.savefig(fname, dpi=120)
     plt.close(fig)
-    print(f"  [BHV-02] 保存: {fname}")
+    print(f"  [BHV-02] saved: {fname}")
 
 
 # ---------------------------------------------------------------------------
-# BHV-03: 点別絶対誤差ヒートマップ
+# BHV-03: Pointwise absolute error heatmap
 # ---------------------------------------------------------------------------
 
 def bhv03_error_heatmap(
@@ -266,10 +267,10 @@ def bhv03_error_heatmap(
     t_grid: np.ndarray,
     x_grid: np.ndarray,
 ) -> None:
-    """BHV-03: |u_theta - u_ref| の誤差場ヒートマップ。
+    """BHV-03: Heatmap of pointwise absolute error |u_theta - u_ref|.
 
-    確認観点:
-        誤差が全体的に 0 に近い薄い色であること（衝撃波近傍を除く）。
+    Check: error should be close to 0 (light color) across most of the domain,
+    except near the shock wave.
     """
     x_flat = X_mesh.ravel().reshape(-1, 1).astype(np.float32)
     t_flat = T_mesh.ravel().reshape(-1, 1).astype(np.float32)
@@ -286,44 +287,45 @@ def bhv03_error_heatmap(
         t_grid.ravel(), x_grid.ravel(), error,
         cmap="hot_r", vmin=0, shading="auto",
     )
-    fig.colorbar(im, ax=ax, label="|u_θ - u_ref|")
+    fig.colorbar(im, ax=ax, label="|u_theta - u_ref|")
     ax.set_xlabel("t")
     ax.set_ylabel("x")
     ax.set_title(
-        f"BHV-03: 点別絶対誤差 |u_θ - u_ref|（最大誤差 = {error.max():.4f}）\n"
-        "確認観点: 衝撃波近傍を除き誤差が 0 に近い薄い色であること"
+        f"BHV-03: Pointwise absolute error |u_theta - u_ref| (max = {error.max():.4f})\n"
+        "Check: error should be light (near 0) except near the shock wave"
     )
     fname = os.path.join(OUTPUT_DIR, "bhv03_error_heatmap.png")
     fig.tight_layout()
     fig.savefig(fname, dpi=120)
     plt.close(fig)
-    print(f"  [BHV-03] 保存: {fname}")
+    print(f"  [BHV-03] saved: {fname}")
 
 
 # ---------------------------------------------------------------------------
-# BHV-04: 逆問題における ν の推移
+# BHV-04: nu estimation trajectory (inverse problem)
 # ---------------------------------------------------------------------------
 
 def bhv04_nu_history(nu_history: list[float]) -> None:
-    """BHV-04: ν の推定値がエポックごとに真値 0.01/π に近づくかを確認する。
+    """BHV-04: Plot the trajectory of the estimated nu vs the true value.
 
-    確認観点:
-        学習終了時の ν* が真値 ± 5% 以内に収束すること。
+    Check: the estimated nu* should converge to within +-5% of the true value
+    0.01/pi by the end of training (Algorithm 3, Eq. 11).
     """
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(nu_history, linewidth=1.0, label="ν 推定値")
-    ax.axhline(NU_TRUE, color="red", linestyle="--", linewidth=1.5, label=f"真値 ν* = {NU_TRUE:.5f}")
+    ax.plot(nu_history, linewidth=1.0, label="Estimated nu")
+    ax.axhline(NU_TRUE, color="red", linestyle="--", linewidth=1.5,
+               label=f"True nu* = {NU_TRUE:.5f}")
     ax.fill_between(
         range(len(nu_history)),
         NU_TRUE * 0.95, NU_TRUE * 1.05,
-        alpha=0.15, color="red", label="真値 ±5%",
+        alpha=0.15, color="red", label="True value +/-5%",
     )
     ax.set_xlabel("Epoch")
-    ax.set_ylabel("ν")
+    ax.set_ylabel("nu")
     ax.set_title(
-        "BHV-04: 逆問題における ν の推移（Algorithm 3，式(11)）\n"
-        f"確認観点: 学習終了時の ν* が真値 {NU_TRUE:.5f} の ±5% 以内に収束すること\n"
-        f"最終推定値: {nu_history[-1]:.5f}"
+        "BHV-04: nu estimation trajectory (Algorithm 3, Eq. 11)\n"
+        f"Check: final nu* should converge within +-5% of true value {NU_TRUE:.5f}\n"
+        f"Final estimate: {nu_history[-1]:.5f}"
     )
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -332,11 +334,11 @@ def bhv04_nu_history(nu_history: list[float]) -> None:
     fig.tight_layout()
     fig.savefig(fname, dpi=120)
     plt.close(fig)
-    print(f"  [BHV-04] 保存: {fname}")
+    print(f"  [BHV-04] saved: {fname}")
 
 
 # ---------------------------------------------------------------------------
-# BHV-05: 初期条件 u(0, x) = -sin(πx) の再現確認
+# BHV-05: Initial condition u(0, x) = -sin(pi*x) reproduction
 # ---------------------------------------------------------------------------
 
 def bhv05_initial_condition(
@@ -344,10 +346,9 @@ def bhv05_initial_condition(
     x_grid: np.ndarray,
     usol: np.ndarray,
 ) -> None:
-    """BHV-05: t=0 断面での推定解と初期条件 -sin(πx) を比較する。
+    """BHV-05: Compare predicted u(0, x) against the reference -sin(pi*x).
 
-    確認観点:
-        推定曲線と参照曲線が概ね重なること。
+    Check: the two curves should nearly overlap (Paper Section 5.1, Eq. 2-4).
     """
     x_vals = x_grid.ravel().reshape(-1, 1).astype(np.float32)
     t_vals = np.zeros_like(x_vals)
@@ -357,16 +358,16 @@ def bhv05_initial_condition(
             torch.tensor(t_vals), torch.tensor(x_vals)
         ).numpy().ravel()
 
-    u_ref_ic = usol[:, 0]  # t=0 の参照解（= -sin(πx)）
+    u_ref_ic = usol[:, 0]  # reference at t=0: -sin(pi*x)
 
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(x_grid.ravel(), u_ref_ic, "b-", linewidth=2.0, label="参照解 -sin(πx)")
-    ax.plot(x_grid.ravel(), u_pred_ic, "r--", linewidth=1.5, label="推定解 u_θ(0, x)")
+    ax.plot(x_grid.ravel(), u_ref_ic, "b-", linewidth=2.0, label="Reference -sin(pi*x)")
+    ax.plot(x_grid.ravel(), u_pred_ic, "r--", linewidth=1.5, label="Predicted u_theta(0, x)")
     ax.set_xlabel("x")
     ax.set_ylabel("u(0, x)")
     ax.set_title(
-        "BHV-05: 初期条件 u(0, x) = -sin(πx) の再現（論文 Section 5.1, 式(2)-(4)）\n"
-        "確認観点: 推定曲線と参照曲線が概ね重なること"
+        "BHV-05: Initial condition u(0,x) = -sin(pi*x) reproduction\n"
+        "(Paper Section 5.1, Eq. 2-4)  Check: curves should nearly overlap"
     )
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -375,16 +376,16 @@ def bhv05_initial_condition(
     fig.tight_layout()
     fig.savefig(fname, dpi=120)
     plt.close(fig)
-    print(f"  [BHV-05] 保存: {fname}")
+    print(f"  [BHV-05] saved: {fname}")
 
 
 # ---------------------------------------------------------------------------
-# メイン
+# Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """全振る舞いテストを実行する。"""
-    print("=== 振る舞いテスト: データ読み込み ===")
+    """Run all behavior tests and save graphs."""
+    print("=== Behavior tests: loading data ===")
     x_grid, t_grid, X_mesh, T_mesh, usol = load_data()
     print(f"  x: {x_grid.shape}, t: {t_grid.shape}, usol: {usol.shape}")
 
@@ -393,47 +394,47 @@ def main() -> None:
     print(f"  BoundaryData: {boundary_data.t.shape}, CollocationPoints: {collocation.t.shape}")
 
     # -----------------------------------------------------------------------
-    # 順問題（BHV-01〜03，BHV-05）
+    # Forward problem (BHV-01 to BHV-03, BHV-05)
     # -----------------------------------------------------------------------
-    print("\n=== 順問題の学習（Adam×2000 + L-BFGS×50） ===")
+    print("\n=== Forward problem training (Adam x2000 + L-BFGS x50) ===")
     forward_solver = BurgersPINNSolver(PDE_CFG, NET_CFG, TRAIN_CFG)
     forward_result = forward_solver.solve_forward(boundary_data, collocation)
-    print(f"  学習完了: 損失履歴 {len(forward_result.loss_history)} ステップ")
-    print(f"  最終損失: {forward_result.loss_history[-1]:.4e}")
+    print(f"  Training done: {len(forward_result.loss_history)} steps")
+    print(f"  Final loss: {forward_result.loss_history[-1]:.4e}")
 
-    print("\n=== BHV-01: 損失収束曲線 ===")
-    bhv01_loss_curve(forward_result.loss_history, title_suffix="（順問題）")
+    print("\n=== BHV-01: Loss convergence curve ===")
+    bhv01_loss_curve(forward_result.loss_history, title_suffix=" (forward problem)")
 
-    print("\n=== BHV-02: 推定解 vs 参照解ヒートマップ ===")
+    print("\n=== BHV-02: Predicted vs reference solution heatmaps ===")
     bhv02_solution_heatmap(forward_result.model, X_mesh, T_mesh, usol, t_grid, x_grid)
 
-    print("\n=== BHV-03: 点別絶対誤差ヒートマップ ===")
+    print("\n=== BHV-03: Pointwise absolute error heatmap ===")
     bhv03_error_heatmap(forward_result.model, X_mesh, T_mesh, usol, t_grid, x_grid)
 
-    print("\n=== BHV-05: 初期条件 u(0, x) = -sin(πx) の再現確認 ===")
+    print("\n=== BHV-05: Initial condition u(0, x) = -sin(pi*x) reproduction ===")
     bhv05_initial_condition(forward_result.model, x_grid, usol)
 
     # -----------------------------------------------------------------------
-    # 逆問題（BHV-04）: InverseSolver を直接使用して nu_history を取得
-    # 逆問題では全領域の散在観測データを使用する
+    # Inverse problem (BHV-04): use InverseSolver directly to access nu_history
+    # Full-domain scattered observations are used for nu identification.
     # -----------------------------------------------------------------------
-    print("\n=== 逆問題の学習（Adam×2000，ν 初期値 = 0.005） ===")
+    print("\n=== Inverse problem training (Adam x2000, nu_init = 0.005) ===")
     observations = sample_scattered_observations(X_mesh, T_mesh, usol, n_u=INV_TRAIN_CFG.n_u)
-    print(f"  散在観測データ: {observations.t.shape[0]} 点（全領域サンプリング）")
+    print(f"  Scattered observations: {observations.t.shape[0]} points (full domain)")
     pinn_inv = PINN(NET_CFG)
     residual_computer = PDEResidualComputer()
     loss_fn = LossFunction(residual_computer)
     inv_solver = InverseSolver(loss_fn, nu_init=0.005)
     inv_solver.train(pinn_inv, observations, collocation, INV_TRAIN_CFG)
 
-    print(f"  真値 ν* = {NU_TRUE:.5f}")
-    print(f"  推定値 ν  = {inv_solver.nu:.5f}")
-    print(f"  誤差率     = {abs(inv_solver.nu - NU_TRUE) / NU_TRUE * 100:.1f}%")
+    print(f"  True   nu* = {NU_TRUE:.5f}")
+    print(f"  Est.   nu  = {inv_solver.nu:.5f}")
+    print(f"  Error      = {abs(inv_solver.nu - NU_TRUE) / NU_TRUE * 100:.1f}%")
 
-    print("\n=== BHV-04: ν の推移グラフ ===")
+    print("\n=== BHV-04: nu estimation trajectory ===")
     bhv04_nu_history(inv_solver._nu_history)
 
-    print(f"\n=== 完了: 全グラフを {OUTPUT_DIR}/ に保存しました ===")
+    print(f"\n=== Done: all graphs saved to {OUTPUT_DIR}/ ===")
 
 
 if __name__ == "__main__":
