@@ -2,7 +2,9 @@
 name = "03-PINNs-Burgers"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "scipy>=1.17.1",
+]
 
 [build-system]
 requires = ["hatchling"]

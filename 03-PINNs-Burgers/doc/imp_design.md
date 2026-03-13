@@ -579,3 +579,42 @@ classDiagram
 | L-BFGS のクロージャ | `torch.optim.LBFGS` は `closure`（損失を再計算して返す関数）を要求する | `ForwardSolver._train_lbfgs` |
 | Xavier 初期化 | 論文が明示する通り `torch.nn.init.xavier_uniform_` を各 `Linear` 層に適用する | `PINN.__init__` |
 | tanh 固定 | 活性化関数は論文で tanh に固定されており設定項目としない | `PINN` |
+
+---
+
+## 8. 検証データ仕様
+
+### データファイル
+
+| 項目 | 内容 |
+|------|------|
+| ファイルパス | `data/burgers_shock.mat` |
+| 読み込みライブラリ | `scipy.io.loadmat` |
+| フォーマット | MATLAB `.mat` ファイル（v5 形式） |
+
+### データ変数一覧
+
+| 変数名 | 形状 | dtype | 意味 |
+|--------|------|-------|------|
+| `x` | `(256, 1)` | `float64` | 空間座標グリッド（$x \in [-1, 1]$） |
+| `t` | `(100, 1)` | `float64` | 時間座標グリッド（$t \in [0, 1]$） |
+| `usol` | `(256, 100)` | `float64` | 参照解 $u(x, t)$（行：空間，列：時間） |
+
+### 読み込み方法
+
+```python
+import scipy.io
+import numpy as np
+
+raw = scipy.io.loadmat("data/burgers_shock.mat")
+
+x = raw["x"]      # shape: (256, 1)
+t = raw["t"]      # shape: (100, 1)
+usol = raw["usol"]  # shape: (256, 100)
+```
+
+### 用途
+
+- **順問題の検証**：PINN が推定した $u_\theta(t, x)$ を `usol` と比較して誤差を評価する
+- **境界・初期条件データの抽出**：`x`, `t`, `usol` から $N_u$ 点をランダムサンプリングして `BoundaryData` を構築する
+- **コロケーション点の生成**：`x`, `t` の範囲から $N_f$ 点をランダムサンプリングして `CollocationPoints` を構築する
