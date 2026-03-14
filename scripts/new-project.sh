@@ -16,6 +16,13 @@ fi
 PROJECT_NAME="$1"
 PROJECT_DIR="$REPO_ROOT/$PROJECT_NAME"
 
+# Extract paper name: strip leading "<id>-" prefix if present (e.g. "27-transformer" -> "transformer")
+if [[ "$PROJECT_NAME" =~ ^[0-9]+-(.+)$ ]]; then
+  PAPER_NAME="${BASH_REMATCH[1]}"
+else
+  PAPER_NAME="$PROJECT_NAME"
+fi
+
 # --- Check for existing directory ---
 if [[ -e "$PROJECT_DIR" ]]; then
   echo "Error: '$PROJECT_DIR' already exists. Aborting to avoid overwrite." >&2
@@ -25,7 +32,7 @@ fi
 echo "Creating project: $PROJECT_NAME"
 
 # --- Create standard subdirectories ---
-for dir in src tests doc example; do
+for dir in src "src/$PAPER_NAME" tests doc example; do
   mkdir -p "$PROJECT_DIR/$dir"
   echo "  created $PROJECT_NAME/$dir/"
 done
@@ -44,7 +51,7 @@ fi
 
 # --- Generate pyproject.toml ---
 # Convert hyphens to underscores for the package name used in wheel config.
-PACKAGE_NAME="${PROJECT_NAME//-/_}"
+PACKAGE_NAME="${PAPER_NAME//-/_}"
 
 cat > "$PROJECT_DIR/pyproject.toml" << EOF
 [project]
