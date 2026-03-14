@@ -50,6 +50,27 @@ class BayesianOptimizer:
         self._objective = objective
         self._config = config
 
+    def _log_trial(self, trial: TrialResult, label: str) -> None:
+        """Print a single trial result to stdout.
+
+        Parameters
+        ----------
+        trial:
+            The trial result to log.
+        label:
+            Short label displayed at the beginning of the line (e.g. "[Initial 1/5]").
+        """
+        params_str = "  ".join(
+            f"{k}={v:.2e}" if isinstance(v, float) else f"{k}={v}"
+            for k, v in trial.params.items()
+        )
+        print(
+            f"{label}  {params_str}"
+            f"  | L2={trial.rel_l2_error:.4e}"
+            f"  | Time={trial.elapsed_time:.2f}s"
+            f"  | Obj={trial.objective:.4e}"
+        )
+
     def optimize(self) -> BOResult:
         """Run the full Bayesian optimization loop and return BOResult.
 
@@ -85,11 +106,14 @@ class BayesianOptimizer:
             n=self._config.n_initial, seed=self._config.seed
         )  # (n_initial, dim)
 
+        n_init_width = len(str(self._config.n_initial))
         for i in range(self._config.n_initial):
             x_i = sobol_points[i]  # (dim,)
             params = self._search_space.from_tensor(x_i)
             trial = self._objective(params=params, trial_id=i, is_initial=True)
             trials.append(trial)
+            label = f"[Initial {i + 1:>{n_init_width}}/{self._config.n_initial}]"
+            self._log_trial(trial, label)
 
         train_X = sobol_points.clone().to(torch.float64)  # (n_initial, dim)
         train_Y = torch.tensor(
@@ -99,6 +123,7 @@ class BayesianOptimizer:
         # ------------------------------------------------------------------ #
         # Phase 2: GP-based sequential search
         # ------------------------------------------------------------------ #
+        n_iter_width = len(str(self._config.n_iterations))
         for iteration in range(self._config.n_iterations):
             trial_id = self._config.n_initial + iteration
 
@@ -131,6 +156,8 @@ class BayesianOptimizer:
             params = self._search_space.from_tensor(x_next)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
             trials.append(trial)
+            label = f"[BO     {iteration + 1:>{n_iter_width}}/{self._config.n_iterations}]"
+            self._log_trial(trial, label)
 
             train_X = torch.cat([train_X, x_next.to(torch.float64)], dim=0)
             train_Y = torch.cat(
