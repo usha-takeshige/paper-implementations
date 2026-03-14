@@ -12,33 +12,24 @@ Output:
 
 import math
 import os
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io
 import torch
 
-sys.path.insert(0, "src")
-from importlib import import_module
-
-pkg = import_module("03_PINNs_Burgers")
-BoundaryData = pkg.BoundaryData
-BurgersPINNSolver = pkg.BurgersPINNSolver
-CollocationPoints = pkg.CollocationPoints
-NetworkConfig = pkg.NetworkConfig
-PDEConfig = pkg.PDEConfig
-TrainingConfig = pkg.TrainingConfig
-
-_solver_mod = import_module("03_PINNs_Burgers.solver")
-_loss_mod = import_module("03_PINNs_Burgers.loss")
-_residual_mod = import_module("03_PINNs_Burgers.residual")
-_network_mod = import_module("03_PINNs_Burgers.network")
-
-InverseSolver = _solver_mod.InverseSolver
-LossFunction = _loss_mod.LossFunction
-PDEResidualComputer = _residual_mod.PDEResidualComputer
-PINN = _network_mod.PINN
+from PINNs_Burgers import (
+    BoundaryData,
+    BurgersPINNSolver,
+    CollocationPoints,
+    NetworkConfig,
+    PDEConfig,
+    TrainingConfig,
+)
+from PINNs_Burgers.solver import InverseSolver
+from PINNs_Burgers.loss import LossFunction
+from PINNs_Burgers.residual import PDEResidualComputer
+from PINNs_Burgers.network import PINN
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "behavior_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)

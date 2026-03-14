@@ -9,29 +9,17 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-import sys
-sys.path.insert(0, "src")
-from importlib import import_module
-
-pkg = import_module("03_PINNs_Burgers")
-BoundaryData = pkg.BoundaryData
-CollocationPoints = pkg.CollocationPoints
-NetworkConfig = pkg.NetworkConfig
-PDEConfig = pkg.PDEConfig
-TrainingConfig = pkg.TrainingConfig
-
-from importlib import import_module as _imp
-
-_network = _imp("03_PINNs_Burgers.network")
-_residual = _imp("03_PINNs_Burgers.residual")
-_loss = _imp("03_PINNs_Burgers.loss")
-_solver = _imp("03_PINNs_Burgers.solver")
-
-PINN = _network.PINN
-PDEResidualComputer = _residual.PDEResidualComputer
-LossFunction = _loss.LossFunction
-ForwardSolver = _solver.ForwardSolver
-InverseSolver = _solver.InverseSolver
+from PINNs_Burgers import (
+    BoundaryData,
+    CollocationPoints,
+    NetworkConfig,
+    PDEConfig,
+    TrainingConfig,
+)
+from PINNs_Burgers.solver import InverseSolver, ForwardSolver
+from PINNs_Burgers.loss import LossFunction
+from PINNs_Burgers.residual import PDEResidualComputer
+from PINNs_Burgers.network import PINN
 
 
 # ---------------------------------------------------------------------------
