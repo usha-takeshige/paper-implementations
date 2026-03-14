@@ -143,7 +143,7 @@ def sample_collocation(
 # ---------------------------------------------------------------------------
 
 PDE_CFG = PDEConfig(nu=NU_TRUE, x_min=-1.0, x_max=1.0, t_min=0.0, t_max=1.0)
-NET_CFG = NetworkConfig(n_hidden_layers=5, n_neurons=20)
+NET_CFG = NetworkConfig(n_hidden_layers=8, n_neurons=19)
 TRAIN_CFG = TrainingConfig(
     n_u=100,
     n_f=10_000,
@@ -213,13 +213,14 @@ def bhv02_solution_heatmap(
 
     Check: shock wave position and shape should visually match the reference.
     """
+    device = next(model.parameters()).device
     x_flat = X_mesh.ravel().reshape(-1, 1).astype(np.float32)
     t_flat = T_mesh.ravel().reshape(-1, 1).astype(np.float32)
 
     with torch.no_grad():
         u_pred = model(
-            torch.tensor(t_flat), torch.tensor(x_flat)
-        ).numpy().reshape(X_mesh.shape)
+            torch.tensor(t_flat, device=device), torch.tensor(x_flat, device=device)
+        ).cpu().numpy().reshape(X_mesh.shape)
 
     vmin = float(usol.min())
     vmax = float(usol.max())
@@ -263,13 +264,14 @@ def bhv03_error_heatmap(
     Check: error should be close to 0 (light color) across most of the domain,
     except near the shock wave.
     """
+    device = next(model.parameters()).device
     x_flat = X_mesh.ravel().reshape(-1, 1).astype(np.float32)
     t_flat = T_mesh.ravel().reshape(-1, 1).astype(np.float32)
 
     with torch.no_grad():
         u_pred = model(
-            torch.tensor(t_flat), torch.tensor(x_flat)
-        ).numpy().reshape(X_mesh.shape)
+            torch.tensor(t_flat, device=device), torch.tensor(x_flat, device=device)
+        ).cpu().numpy().reshape(X_mesh.shape)
 
     error = np.abs(u_pred - usol)
 
@@ -341,13 +343,14 @@ def bhv05_initial_condition(
 
     Check: the two curves should nearly overlap (Paper Section 5.1, Eq. 2-4).
     """
+    device = next(model.parameters()).device
     x_vals = x_grid.ravel().reshape(-1, 1).astype(np.float32)
     t_vals = np.zeros_like(x_vals)
 
     with torch.no_grad():
         u_pred_ic = model(
-            torch.tensor(t_vals), torch.tensor(x_vals)
-        ).numpy().ravel()
+            torch.tensor(t_vals, device=device), torch.tensor(x_vals, device=device)
+        ).cpu().numpy().ravel()
 
     u_ref_ic = usol[:, 0]  # reference at t=0: -sin(pi*x)
 
@@ -412,10 +415,11 @@ def main() -> None:
     print("\n=== Inverse problem training (Adam x2000, nu_init = 0.005) ===")
     observations = sample_scattered_observations(X_mesh, T_mesh, usol, n_u=INV_TRAIN_CFG.n_u)
     print(f"  Scattered observations: {observations.t.shape[0]} points (full domain)")
-    pinn_inv = PINN(NET_CFG)
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    pinn_inv = PINN(NET_CFG).to(device)
     residual_computer = PDEResidualComputer()
     loss_fn = LossFunction(residual_computer)
-    inv_solver = InverseSolver(loss_fn, nu_init=0.005)
+    inv_solver = InverseSolver(loss_fn, nu_init=0.005, device=device)
     inv_solver.train(pinn_inv, observations, collocation, INV_TRAIN_CFG)
 
     print(f"  True   nu* = {NU_TRUE:.5f}")
