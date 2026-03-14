@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir **)",
+      "Edit(pyproject.toml)",
+      "Bash(uv run pytest *)",
+      "Bash(uv sync *)",
+      "Bash(uv add *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(gh pr view *)",
+      "Edit(*.py)",
+      "Edit(*.md)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ]
+  }
+}
