@@ -113,14 +113,15 @@ class ObjectiveFunction:
         elapsed_time = time.perf_counter() - start
 
         model = result.model
+        device = next(model.parameters()).device
         x_flat = torch.tensor(
-            self._x_mesh.flatten(), dtype=torch.float32
+            self._x_mesh.flatten(), dtype=torch.float32, device=device
         ).unsqueeze(1)
         t_flat = torch.tensor(
-            self._t_mesh.flatten(), dtype=torch.float32
+            self._t_mesh.flatten(), dtype=torch.float32, device=device
         ).unsqueeze(1)
         with torch.no_grad():
-            u_pred_flat = model(t_flat, x_flat).numpy()
+            u_pred_flat = model(t_flat, x_flat).cpu().numpy()
         u_pred = u_pred_flat.reshape(self._x_mesh.shape)
 
         rel_l2_error = float(

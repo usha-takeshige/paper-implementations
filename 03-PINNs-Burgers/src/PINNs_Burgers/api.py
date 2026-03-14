@@ -1,5 +1,7 @@
 """Public API for PINNs Burgers equation solver (Facade pattern)."""
 
+import torch
+
 from .config import NetworkConfig, PDEConfig, TrainingConfig
 from .data import BoundaryData, CollocationPoints
 from .loss import LossFunction
@@ -14,6 +16,7 @@ class BurgersPINNSolver:
 
     Algorithm 2（順問題）と Algorithm 3（逆問題）をパブリック API として公開する。
     内部クラスの組み立てを担う Facade として機能する。
+    MPS（Apple Silicon）が利用可能な場合は自動的に使用する。
     """
 
     def __init__(
@@ -32,6 +35,10 @@ class BurgersPINNSolver:
         self.pde_config = pde_config
         self.network_config = network_config
         self.training_config = training_config
+        if torch.backends.mps.is_available():
+            self._device = torch.device("mps")
+        else:
+            self._device = torch.device("cpu")
 
     def solve_forward(
         self,
@@ -50,10 +57,10 @@ class BurgersPINNSolver:
         Returns:
             学習済みネットワーク θ* と損失履歴を含む ForwardResult。
         """
-        model = PINN(self.network_config)
+        model = PINN(self.network_config).to(self._device)
         residual_computer = PDEResidualComputer()
         loss_fn = LossFunction(residual_computer)
-        solver = ForwardSolver(loss_fn, self.pde_config)
+        solver = ForwardSolver(loss_fn, self.pde_config, self._device)
 
         loss_history = solver.train(model, data, collocation, self.training_config)
 
@@ -77,10 +84,10 @@ class BurgersPINNSolver:
         Returns:
             学習済みネットワーク θ*，推定された ν*，損失履歴を含む InverseResult。
         """
-        model = PINN(self.network_config)
+        model = PINN(self.network_config).to(self._device)
         residual_computer = PDEResidualComputer()
         loss_fn = LossFunction(residual_computer)
-        solver = InverseSolver(loss_fn, nu_init)
+        solver = InverseSolver(loss_fn, nu_init, self._device)
 
         loss_history = solver.train(model, observations, collocation, self.training_config)
 
