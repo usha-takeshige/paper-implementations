@@ -21,6 +21,8 @@ jobs:
               - '01-rbf-gen/**'
             02-mpde-bo:
               - '02-mpde-bo/**'
+            03-PINNs-Burgers:
+              - '03-PINNs-Burgers/**'
 
   test:
     needs: detect-changes
