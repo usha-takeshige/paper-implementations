@@ -215,10 +215,11 @@ def plot_best_solution_heatmap(
     forward_result = solver.solve_forward(boundary_data, collocation)
     model = forward_result.model
 
-    x_flat = torch.tensor(x_mesh.flatten(), dtype=torch.float32).unsqueeze(1)
-    t_flat = torch.tensor(t_mesh.flatten(), dtype=torch.float32).unsqueeze(1)
+    device = next(model.parameters()).device
+    x_flat = torch.tensor(x_mesh.flatten(), dtype=torch.float32, device=device).unsqueeze(1)
+    t_flat = torch.tensor(t_mesh.flatten(), dtype=torch.float32, device=device).unsqueeze(1)
     with torch.no_grad():
-        u_pred = model(t_flat, x_flat).numpy().reshape(x_mesh.shape)
+        u_pred = model(t_flat, x_flat).cpu().numpy().reshape(x_mesh.shape)
 
     rel_l2 = np.linalg.norm(u_pred - usol) / (np.linalg.norm(usol) + 1e-12)
     vmin = float(usol.min())
