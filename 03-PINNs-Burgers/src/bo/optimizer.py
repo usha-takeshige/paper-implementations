@@ -175,4 +175,5 @@ class BayesianOptimizer:
             best_objective=best_trial.objective,
             best_trial_id=best_trial.trial_id,
             bo_config=self._config,
+            objective_name=self._objective.name,
         )

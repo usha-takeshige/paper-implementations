@@ -5,7 +5,8 @@ the best neural network hyperparameters for BurgersPINNSolver.solve_forward().
 
 Shares the same data pipeline as forward_problem.py.
 
-Objective:  maximize  1 / (rel_l2_error * elapsed_time)
+Objective:  AccuracyObjective  (maximize  -rel_l2_error)
+            Switch to AccuracySpeedObjective to also penalize training time.
 
 Search space:
     n_hidden_layers : int   [2, 8]     linear
@@ -46,11 +47,11 @@ from forward_problem import (
 
 from PINNs_Burgers import NetworkConfig, PDEConfig, TrainingConfig, BurgersPINNSolver
 from bo import (
+    AccuracyObjective,
     BOConfig,
     BayesianOptimizer,
     BOResult,
     HyperParameter,
-    ObjectiveFunction,
     ReportGenerator,
     SearchSpace,
 )
@@ -113,7 +114,7 @@ def plot_objective_scatter(result: BOResult) -> None:
     ax.axhline(y=result.best_objective, color="red", linestyle="--", alpha=0.7,
                label=f"Best = {result.best_objective:.4e}")
     ax.set_xlabel("Trial")
-    ax.set_ylabel("Objective  1/(rel_l2_error × time)")
+    ax.set_ylabel(f"Objective  ({result.objective_name})")
     ax.set_title(
         "BO Objective Values: Sobol Initial vs BO Proposals\n"
         "BO proposals should tend toward higher objective values."
@@ -288,7 +289,7 @@ def main() -> None:
     ])
 
     # 5. Define objective function
-    objective = ObjectiveFunction(
+    objective = AccuracyObjective(
         pde_config=pde_config,
         boundary_data=boundary_data,
         collocation=collocation,

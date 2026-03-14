@@ -54,6 +54,7 @@ class ReportGenerator:
 
         # --- Section 1: Configuration ---
         config_rows = "\n".join([
+            f"| objective         | {result.objective_name} |",
             f"| n_initial         | {cfg.n_initial}   |",
             f"| n_iterations      | {cfg.n_iterations}   |",
             f"| acquisition       | {cfg.acquisition} |",

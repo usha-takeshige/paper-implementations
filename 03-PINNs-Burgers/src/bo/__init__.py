@@ -5,14 +5,16 @@ for tuning the neural network hyperparameters of BurgersPINNSolver.
 
 Public API
 ----------
-SearchSpace, HyperParameter   -- define the hyperparameter search domain
-ObjectiveFunction             -- evaluate PINN accuracy for a given config
-BayesianOptimizer, BOConfig   -- run the BO loop
-BOResult, TrialResult         -- store optimization results
-ReportGenerator               -- generate a markdown report from results
+SearchSpace, HyperParameter                    -- define the hyperparameter search domain
+ObjectiveFunction                              -- abstract base class for objective functions
+AccuracyObjective                              -- maximize accuracy (-rel_l2_error)
+AccuracySpeedObjective                         -- maximize accuracy × speed
+BayesianOptimizer, BOConfig                   -- run the BO loop
+BOResult, TrialResult                          -- store optimization results
+ReportGenerator                                -- generate a markdown report from results
 """
 
-from bo.objective import ObjectiveFunction
+from bo.objective import AccuracyObjective, AccuracySpeedObjective, ObjectiveFunction
 from bo.optimizer import BayesianOptimizer
 from bo.report import ReportGenerator
 from bo.result import BOConfig, BOResult, TrialResult
@@ -22,6 +24,8 @@ __all__ = [
     "SearchSpace",
     "HyperParameter",
     "ObjectiveFunction",
+    "AccuracyObjective",
+    "AccuracySpeedObjective",
     "BayesianOptimizer",
     "BOConfig",
     "BOResult",

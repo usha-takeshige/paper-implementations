@@ -1,6 +1,7 @@
-"""Objective function for Bayesian optimization of PINN hyperparameters."""
+"""Objective functions for Bayesian optimization of PINN hyperparameters."""
 
 import time
+from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
@@ -17,15 +18,15 @@ from PINNs_Burgers import (
 from bo.result import TrialResult
 
 
-class ObjectiveFunction:
-    """Evaluate PINN hyperparameters by training and measuring accuracy.
+class ObjectiveFunction(ABC):
+    """Abstract base class for PINN objective functions.
 
-    Trains a BurgersPINNSolver with the given hyperparameters and returns
-    a TrialResult containing the objective value:
+    Subclasses implement ``_compute_objective`` to define the scalar value
+    derived from ``rel_l2_error`` and ``elapsed_time`` after PINN training.
+    ``BayesianOptimizer`` maximizes the returned objective value.
 
-        objective = 1 / max(rel_l2_error × elapsed_time, 1e-10)
-
-    Higher objective means more accurate and faster training.
+    Common PINN evaluation logic (training, inference, error computation)
+    is provided by ``__call__`` in this base class.
     """
 
     def __init__(
@@ -38,7 +39,7 @@ class ObjectiveFunction:
         usol: np.ndarray,
         base_training_config: TrainingConfig,
     ) -> None:
-        """Initialize the objective function with fixed problem data.
+        """Initialize with fixed problem data shared across all trials.
 
         Parameters
         ----------
@@ -67,6 +68,30 @@ class ObjectiveFunction:
         self._usol = usol
         self._base_training_config = base_training_config
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Human-readable name of the objective function."""
+        ...
+
+    @abstractmethod
+    def _compute_objective(self, rel_l2_error: float, elapsed_time: float) -> float:
+        """Compute the scalar objective from evaluation metrics.
+
+        Parameters
+        ----------
+        rel_l2_error:
+            Relative L2 error of the PINN prediction.
+        elapsed_time:
+            Training elapsed time in seconds.
+
+        Returns
+        -------
+        float
+            Scalar objective value. Higher is better (BayesianOptimizer maximizes).
+        """
+        ...
+
     def __call__(
         self, params: dict[str, float | int], trial_id: int, is_initial: bool
     ) -> TrialResult:
@@ -77,7 +102,7 @@ class ObjectiveFunction:
         2. Run BurgersPINNSolver.solve_forward() with perf_counter timing.
         3. Compute u_pred on the evaluation grid with torch.no_grad().
         4. Compute rel_l2_error = ||u_pred - usol||_F / ||usol||_F.
-        5. Compute objective = 1 / max(rel_l2_error × elapsed_time, 1e-10).
+        5. Compute objective via _compute_objective(rel_l2_error, elapsed_time).
         6. Return TrialResult.
 
         Parameters
@@ -127,7 +152,7 @@ class ObjectiveFunction:
         rel_l2_error = float(
             np.linalg.norm(u_pred - self._usol) / np.linalg.norm(self._usol)
         )
-        objective = 1.0 / max(rel_l2_error * elapsed_time, 1e-10)
+        objective = self._compute_objective(rel_l2_error, elapsed_time)
 
         return TrialResult(
             trial_id=trial_id,
@@ -137,3 +162,40 @@ class ObjectiveFunction:
             elapsed_time=elapsed_time,
             is_initial=is_initial,
         )
+
+
+class AccuracyObjective(ObjectiveFunction):
+    """Objective that maximizes accuracy only.
+
+    objective = -rel_l2_error
+
+    Higher objective means lower relative L2 error (better accuracy).
+    Elapsed training time is not considered.
+    """
+
+    @property
+    def name(self) -> str:
+        """Return the objective name."""
+        return "Accuracy  -rel_l2_error"
+
+    def _compute_objective(self, rel_l2_error: float, _elapsed_time: float) -> float:
+        """Return the negated relative L2 error."""
+        return -rel_l2_error
+
+
+class AccuracySpeedObjective(ObjectiveFunction):
+    """Objective that maximizes both accuracy and training speed.
+
+    objective = 1 / max(rel_l2_error × elapsed_time, 1e-10)
+
+    Higher objective means more accurate and faster training.
+    """
+
+    @property
+    def name(self) -> str:
+        """Return the objective name."""
+        return "Accuracy × Speed  1/(rel_l2_error × elapsed_time)"
+
+    def _compute_objective(self, rel_l2_error: float, elapsed_time: float) -> float:
+        """Return the inverse of the error-time product."""
+        return 1.0 / max(rel_l2_error * elapsed_time, 1e-10)

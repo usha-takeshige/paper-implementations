@@ -50,7 +50,7 @@ class TrialResult(BaseModel):
         description="評価したハイパーパラメータ値（実スケール）"
     )
     objective: float = Field(
-        description="目的関数値 = 1 / (rel_l2_error × elapsed_time)"
+        description="目的関数値（高いほど良い）。具体的な計算式は使用する ObjectiveFunction サブクラスに依存"
     )
     rel_l2_error: float = Field(
         description="相対 L2 誤差 ‖u_pred - u_ref‖₂ / ‖u_ref‖₂"
@@ -79,3 +79,4 @@ class BOResult(BaseModel):
     best_objective: float = Field(description="最大の目的関数値")
     best_trial_id: int = Field(description="最良試行の trial_id")
     bo_config: BOConfig = Field(description="使用した BO 設定（レポート記載用）")
+    objective_name: str = Field(description="使用した ObjectiveFunction の名称")
