@@ -14,10 +14,12 @@ from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
 from opt_agent.optimizer import LLMOptimizer
 from opt_agent.proposal import LLMProposal
 from opt_agent.prompt import PromptBuilder
+from opt_agent.report import IterationReportWriter
 
 __all__ = [
     "BaseChain",
     "GeminiChain",
+    "IterationReportWriter",
     "LLMConfig",
     "LLMIterationMeta",
     "LLMResult",

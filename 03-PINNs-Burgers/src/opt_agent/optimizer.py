@@ -1,5 +1,8 @@
 """LLM-based hyperparameter optimizer (Facade)."""
 
+from collections.abc import Callable
+from typing import Optional
+
 from bo.objective import ObjectiveFunction
 from bo.result import TrialResult
 from bo.space import SearchSpace
@@ -8,6 +11,12 @@ from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
 
 
 _INT_PARAMS = {"n_hidden_layers", "n_neurons", "epochs_adam"}
+
+#: Callback called after each LLM-guided iteration.
+#: Arguments: (meta, trial, all_trials_so_far)
+IterationCallback = Callable[
+    [LLMIterationMeta, TrialResult, list[TrialResult]], None
+]
 
 
 class LLMOptimizer:
@@ -30,6 +39,7 @@ class LLMOptimizer:
         objective: ObjectiveFunction,
         config: LLMConfig = LLMConfig(),
         chain: BaseChain | None = None,
+        on_iteration: Optional[IterationCallback] = None,
     ) -> None:
         """Initialize LLMOptimizer.
 
@@ -44,6 +54,11 @@ class LLMOptimizer:
         chain:
             LLM chain implementation. If None, GeminiChain is built from
             GEMINI_API_KEY and GEMINI_MODEL_NAME environment variables.
+        on_iteration:
+            Optional callback invoked after each LLM-guided iteration.
+            Called with (meta, trial, all_trials_so_far) immediately after
+            the proposed point is evaluated.  Use this hook to write
+            per-iteration reports or log streaming results.
 
         Raises
         ------
@@ -53,6 +68,7 @@ class LLMOptimizer:
         self._search_space = search_space
         self._objective = objective
         self._config = config
+        self._on_iteration = on_iteration
 
         if chain is not None:
             self._chain: BaseChain = chain
@@ -152,6 +168,9 @@ class LLMOptimizer:
                 reasoning=proposal.reasoning,
             )
             metas.append(meta)
+
+            if self._on_iteration is not None:
+                self._on_iteration(meta, trial, list(trials))
 
         return trials, metas
 

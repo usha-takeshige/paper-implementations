@@ -15,7 +15,7 @@ Usage:
     uv run python example/opt_agent_forward.py
 
 Output (example/opt_agent_output/):
-    opt_agent_report.md                 -- markdown summary report
+    opt_agent_report.md                 -- running report (updated each iteration)
     opt_agent_convergence.png           -- cumulative best objective vs trial
     opt_agent_objective_scatter.png     -- all trial objectives colored by type
     opt_agent_parallel_coords.png       -- parallel coordinates of hyperparameters
@@ -46,158 +46,14 @@ from bo import (
     AccuracyObjective,
     HyperParameter,
     SearchSpace,
+    TrialResult,
 )
-from opt_agent import LLMConfig, LLMOptimizer, LLMResult
+from opt_agent import IterationReportWriter, LLMConfig, LLMIterationMeta, LLMOptimizer, LLMResult
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "opt_agent_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 NU_TRUE = 0.01 / math.pi  # kinematic viscosity (Paper Section 5.1)
-
-
-# ---------------------------------------------------------------------------
-# Report generation
-# ---------------------------------------------------------------------------
-
-
-def generate_report(result: LLMResult, search_space: SearchSpace) -> str:
-    """Generate and save a markdown report from LLMResult.
-
-    Parameters
-    ----------
-    result:
-        Optimization result.
-    search_space:
-        Search space used in the optimization.
-
-    Returns
-    -------
-    str
-        Path of the saved report file.
-    """
-    from datetime import datetime, timezone
-    now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    cfg = result.llm_config
-
-    scale_label = {True: "log", False: "linear"}
-    space_rows = "\n".join([
-        f"| {hp.name:<17} | {hp.param_type:<5} | {hp.low:<6} | {hp.high:<6} | {scale_label[hp.log_scale]:<6} |"
-        for hp in search_space.parameters
-    ])
-
-    best = next(t for t in result.trials if t.trial_id == result.best_trial_id)
-    best_param_rows = "\n".join([
-        f"| {name:<17} | {val}   |"
-        for name, val in result.best_params.items()
-    ])
-
-    trial_rows = []
-    for t in result.trials:
-        trial_type = "initial" if t.is_initial else "LLM"
-        row = (
-            f"| {t.trial_id:<5} | {trial_type:<7} | "
-            f"{t.params.get('n_hidden_layers', '-'):<8} | "
-            f"{t.params.get('n_neurons', '-'):<9} | "
-            f"{float(t.params.get('lr', 0.0)):.2e} | "
-            f"{t.params.get('epochs_adam', '-'):<11} | "
-            f"{t.rel_l2_error:.4e}     | "
-            f"{t.elapsed_time:.2f}     | "
-            f"{t.objective:.4e}   |"
-        )
-        trial_rows.append(row)
-    all_trials_str = "\n".join(trial_rows)
-
-    best_so_far: list[tuple[int, float]] = []
-    current_best = float("-inf")
-    for t in result.trials:
-        current_best = max(current_best, t.objective)
-        best_so_far.append((t.trial_id, current_best))
-    convergence_rows = "\n".join([
-        f"| {tid:<5} | {b:.4e}              |"
-        for tid, b in best_so_far
-    ])
-
-    content = f"""# LLM-based Hyperparameter Optimization Report
-## Burgers PINNs Hyperparameter Tuning
-
-Generated: {now}
-
----
-
-## 1. Configuration
-
-| Parameter         | Value  |
-|-------------------|--------|
-| objective         | {result.objective_name} |
-| n_initial         | {cfg.n_initial}   |
-| n_iterations      | {cfg.n_iterations}   |
-| seed              | {cfg.seed}   |
-| optimizer         | LLM (Gemini via LangChain) |
-
-### Search Space
-
-| Hyperparameter    | Type  | Low    | High   | Scale  |
-|-------------------|-------|--------|--------|--------|
-{space_rows}
-
----
-
-## 2. Best Result
-
-**Trial ID**: {result.best_trial_id}
-**Objective**: {result.best_objective:.4e}
-
-| Hyperparameter    | Value  |
-|-------------------|--------|
-{best_param_rows}
-
-**Metrics**:
-- Relative L2 Error: {best.rel_l2_error:.4e}
-- Elapsed Time: {best.elapsed_time:.2f} s
-
----
-
-## 3. All Trials
-
-| Trial | Type    | n_layers | n_neurons | lr       | epochs_adam | Rel L2 Error | Time (s) | Objective  |
-|-------|---------|----------|-----------|----------|-------------|--------------|----------|------------|
-{all_trials_str}
-
-> **Type**: `initial` = Sobol initial sample, `LLM` = LLM-guided proposal
-
----
-
-## 4. Convergence
-
-Best objective per trial (cumulative max):
-
-| Trial | Best Objective So Far |
-|-------|-----------------------|
-{convergence_rows}
-
----
-
-## 5. LLM Iteration Metadata
-
-"""
-    for meta in result.iteration_metas:
-        content += f"""### Iteration {meta.iteration_id + 1}
-
-**Proposed params**: {meta.proposed_params}
-
-**Analysis**:
-{meta.analysis_report}
-
-**Reasoning**:
-{meta.reasoning}
-
----
-
-"""
-    output_path = os.path.join(OUTPUT_DIR, "opt_agent_report.md")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return output_path
 
 
 # ---------------------------------------------------------------------------
@@ -426,23 +282,44 @@ def main() -> None:
         base_training_config=base_training_config,
     )
 
-    # 6. Run LLM-based optimization
+    # 6. Run LLM-based optimization with per-iteration report
     llm_config = LLMConfig(n_initial=5, n_iterations=20, seed=42)
     print(
         f"\nStarting LLM optimization: n_initial={llm_config.n_initial}, "
         f"n_iterations={llm_config.n_iterations}\n"
     )
-    optimizer = LLMOptimizer(search_space, objective, llm_config)
+
+    # Initialize running report (header + config written immediately)
+    writer = IterationReportWriter(
+        output_dir=OUTPUT_DIR,
+        search_space=search_space,
+        llm_config=llm_config,
+        objective_name=objective.name,
+    )
+
+    def on_iteration(
+        meta: LLMIterationMeta,
+        trial: TrialResult,
+        all_trials: list[TrialResult],
+    ) -> None:
+        """Write Phase 1 on first call, then append each LLM iteration."""
+        if meta.iteration_id == 0:
+            initial = [t for t in all_trials if t.is_initial]
+            writer.write_initial_trials(initial)
+        writer.append_iteration(meta, trial, all_trials)
+
+    optimizer = LLMOptimizer(
+        search_space, objective, llm_config, on_iteration=on_iteration
+    )
     result = optimizer.optimize()
 
     print(f"\nBest trial: #{result.best_trial_id}")
     print(f"  Best objective: {result.best_objective:.4e}")
     print(f"  Best params:    {result.best_params}")
 
-    # 7. Generate markdown report
-    print("\nGenerating report ...")
-    report_path = generate_report(result, search_space)
-    print(f"  Report saved: {report_path}")
+    # Finalize report with best-result summary and convergence table
+    report_path = writer.finalize(result)
+    print(f"\n  Report saved: {report_path}")
 
     # 8. Visualizations
     print("\nGenerating plots ...")
