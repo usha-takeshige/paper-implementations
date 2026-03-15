@@ -143,12 +143,12 @@ def sample_collocation(
 # ---------------------------------------------------------------------------
 
 PDE_CFG = PDEConfig(nu=NU_TRUE, x_min=-1.0, x_max=1.0, t_min=0.0, t_max=1.0)
-NET_CFG = NetworkConfig(n_hidden_layers=8, n_neurons=19)
+NET_CFG = NetworkConfig(n_hidden_layers=8, n_neurons=10)
 TRAIN_CFG = TrainingConfig(
     n_u=100,
     n_f=10_000,
-    lr=1e-3,
-    epochs_adam=2_000,
+    lr=1e-2,
+    epochs_adam=3079,
     epochs_lbfgs=50,
 )
 INV_TRAIN_CFG = TrainingConfig(
