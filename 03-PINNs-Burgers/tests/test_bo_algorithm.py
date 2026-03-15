@@ -7,6 +7,8 @@ Uses MockObjectiveFunction to avoid running actual PINN training.
 import os
 import tempfile
 
+import dataclasses
+
 import pytest
 import torch
 from pydantic import ValidationError
@@ -229,9 +231,9 @@ def test_alg_bo_12_bo_result_best_trial_id_in_range():
 
 @pytest.mark.algorithm
 def test_alg_bo_13_bo_result_frozen():
-    """ALG-BO-13: BOResult is frozen; assignment raises ValidationError."""
+    """ALG-BO-13: BOResult is frozen; assignment raises FrozenInstanceError."""
     result = make_bo_result()
-    with pytest.raises((ValidationError, TypeError)):
+    with pytest.raises((dataclasses.FrozenInstanceError, TypeError)):
         result.best_objective = 0.0  # type: ignore[misc]
 
 

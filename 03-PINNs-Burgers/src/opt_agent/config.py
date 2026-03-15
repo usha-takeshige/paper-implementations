@@ -46,22 +46,9 @@ class LLMResult(BaseOptimizationResult):
     Aggregates all trial results and identifies the best-performing
     hyperparameter configuration along with LLM reasoning metadata.
     Mirrors BOResult for fair comparison.
+    Inherits trials, best_params, best_objective, best_trial_id, objective_name
+    from BaseOptimizationResult.
     """
-
-    trials: list[TrialResult]
-    """All trial results (initial Sobol + LLM-guided iterations)."""
-
-    best_params: dict[str, float | int]
-    """Hyperparameters of the trial with the highest objective."""
-
-    best_objective: float
-    """Maximum objective value achieved."""
-
-    best_trial_id: int
-    """Trial ID of the best trial."""
-
-    objective_name: str
-    """Name of the ObjectiveFunction used."""
 
     llm_config: LLMConfig
     """LLM optimization configuration used in this run."""

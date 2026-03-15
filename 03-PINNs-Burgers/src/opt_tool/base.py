@@ -22,14 +22,20 @@ class BaseOptimizerConfig:
     seed: int = 42
 
 
+@dataclass(frozen=True)
 class BaseOptimizationResult:
-    """Common interface marker for optimization results.
+    """Common result fields shared by all optimizers.
 
-    Acts as an abstract base to unify BOResult and LLMResult under a single
-    type hierarchy. Concrete subclasses define their own fields using either
-    Pydantic BaseModel or @dataclass(frozen=True), as appropriate for their
-    test compatibility requirements.
+    Stores the trials, best configuration, and objective function name that
+    are common to every optimization result. Subclasses extend with
+    algorithm-specific fields (e.g. bo_config or llm_config).
     """
+
+    trials: list[TrialResult]
+    best_params: dict[str, float | int]
+    best_objective: float
+    best_trial_id: int
+    objective_name: str
 
 
 class BaseOptimizer(ABC):

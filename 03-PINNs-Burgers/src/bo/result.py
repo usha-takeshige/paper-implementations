@@ -3,10 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from opt_tool.base import BaseOptimizationResult, BaseOptimizerConfig
-from opt_tool.result import TrialResult
 
 
 @dataclass(frozen=True)
@@ -26,23 +23,14 @@ class BOConfig(BaseOptimizerConfig):
     raw_samples: int = 512
 
 
-class BOResult(BaseOptimizationResult, BaseModel):
+@dataclass(frozen=True)
+class BOResult(BaseOptimizationResult):
     """Result of the entire Bayesian optimization run.
 
     Aggregates all trial results and identifies the best-performing
     hyperparameter configuration along with the BO settings used.
-    Inherits from BaseOptimizationResult for unified type hierarchy.
+    Inherits trials, best_params, best_objective, best_trial_id, objective_name
+    from BaseOptimizationResult.
     """
 
-    model_config = ConfigDict(frozen=True)
-
-    trials: list[TrialResult] = Field(
-        description="全試行結果（初期サンプル + BO 反復）"
-    )
-    best_params: dict[str, float | int] = Field(
-        description="目的関数が最大の試行のハイパーパラメータ"
-    )
-    best_objective: float = Field(description="最大の目的関数値")
-    best_trial_id: int = Field(description="最良試行の trial_id")
-    bo_config: BOConfig = Field(description="使用した BO 設定（レポート記載用）")
-    objective_name: str = Field(description="使用した ObjectiveFunction の名称")
+    bo_config: BOConfig
