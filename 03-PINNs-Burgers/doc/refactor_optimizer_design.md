@@ -459,3 +459,168 @@ packages = [
     {include = "opt_tool", from = "src"},   # 追加
 ]
 ```
+
+---
+
+## 8. テスト互換性設計
+
+テストコードは一切変更せず、既存のテストがリファクタリング後も通過できるよう
+コード実装の設計上の制約を定める。
+
+### 8-1. テストファイルのインポートパターン
+
+| テストファイル | `bo` からのインポート | `opt_agent` からのインポート |
+|---|---|---|
+| `test_bo_algorithm.py` | `BOConfig, BOResult, BayesianOptimizer, HyperParameter, ReportGenerator, SearchSpace, TrialResult` | — |
+| `test_bo_theory.py` | `BOConfig, BOResult, BayesianOptimizer, HyperParameter, SearchSpace, TrialResult` | — |
+| `test_llm_algorithm.py` | `HyperParameter, SearchSpace, TrialResult` | `BaseChain, LLMConfig, LLMIterationMeta, LLMOptimizer, LLMProposal, LLMResult, PromptBuilder` |
+| `test_llm_theory.py` | `HyperParameter, SearchSpace, TrialResult` | `BaseChain, LLMConfig, LLMOptimizer, LLMProposal, PromptBuilder` |
+
+`test_llm_*` も `HyperParameter`, `SearchSpace`, `TrialResult` を **`bo` から** インポートしている。
+リファクタリング後、これらは `opt_tool/` に移動するが、テストコードは修正しない。
+
+### 8-2. `bo/__init__.py` の必須エクスポート
+
+移動後のクラスを `opt_tool/` から再エクスポートすることで、既存のインポートパスを維持する。
+
+```python
+# bo/__init__.py（変更後）
+from opt_tool.objective import ObjectiveFunction
+from opt_tool.result import TrialResult                     # opt_tool から再エクスポート
+from opt_tool.space import HyperParameter, SearchSpace      # opt_tool から再エクスポート
+from bo.objective import AccuracyObjective, AccuracySpeedObjective
+from bo.optimizer import BayesianOptimizer
+from bo.report import ReportGenerator
+from bo.result import BOConfig, BOResult
+
+__all__ = [
+    "SearchSpace", "HyperParameter", "ObjectiveFunction",
+    "AccuracyObjective", "AccuracySpeedObjective",
+    "BayesianOptimizer", "BOConfig", "BOResult", "TrialResult",
+    "ReportGenerator",
+]
+```
+
+`from bo import TrialResult, SearchSpace, HyperParameter` という既存のインポートが
+リファクタリング後も破綻しないことが保証される。
+
+### 8-3. 凍結チェックテストと例外型の互換性
+
+テストは以下のように `ValidationError` と `TypeError` の両方を受け付けている。
+
+```python
+# ALG-BO-11: TrialResult の frozen テスト
+with pytest.raises((ValidationError, TypeError)):
+    trial.objective = 1.0
+
+# ALG-BO-13: BOResult の frozen テスト
+with pytest.raises((ValidationError, TypeError)):
+    result.best_objective = 0.0
+
+# ALG-LLM-02: LLMConfig の frozen テスト
+with pytest.raises((dataclasses.FrozenInstanceError, TypeError)):
+    cfg.n_initial = 99
+
+# ALG-LLM-06: LLMResult の frozen テスト
+with pytest.raises((dataclasses.FrozenInstanceError, TypeError)):
+    result.best_objective = 99.0
+```
+
+**変換後の例外型の対応:**
+
+| クラス | 変換前 | 変換後 | 送出される例外 | テストとの互換性 |
+|---|---|---|---|---|
+| `TrialResult` | Pydantic `BaseModel` | 変更なし（Pydantic） | `ValidationError` | ✅（`(ValidationError, TypeError)` に含まれる） |
+| `BOConfig` | Pydantic `BaseModel` | `@dataclass(frozen=True)` | `FrozenInstanceError`（≒`TypeError`） | ✅（`(ValidationError, TypeError)` に含まれる） |
+| `BOResult` | Pydantic `BaseModel` | `@dataclass(frozen=True)` | `FrozenInstanceError`（≒`TypeError`） | ✅（`(ValidationError, TypeError)` に含まれる） |
+| `LLMConfig` | `@dataclass(frozen=True)` | 変更なし | `FrozenInstanceError` | ✅（変更なし） |
+| `LLMResult` | `@dataclass(frozen=True)` | `@dataclass(frozen=True)` 継承 | `FrozenInstanceError` | ✅（変更なし） |
+
+`dataclasses.FrozenInstanceError` は `AttributeError` のサブクラスであり `TypeError` ではないが、
+テスト ALG-LLM-02・ALG-LLM-06 は `(dataclasses.FrozenInstanceError, TypeError)` で両方を捕捉しており、
+変換後も通過する。
+
+### 8-4. `bo.objective` のパッチパス
+
+`test_bo_theory.py` は `unittest.mock.patch` で以下をパッチしている。
+
+```python
+patch("bo.objective.BurgersPINNSolver")
+patch("bo.objective.time.perf_counter")
+```
+
+**要件**: `AccuracySpeedObjective` は `bo/objective.py` に留まること。
+
+`ObjectiveFunction` 抽象基底クラスのみを `opt_tool/objective.py` に移動し、
+`AccuracyObjective`, `AccuracySpeedObjective` などの具体実装は `bo/objective.py` に残す。
+これにより `"bo.objective.BurgersPINNSolver"` パッチパスは変更不要。
+
+### 8-5. `BOResult` の dataclass 化とフィールド順
+
+テストはすべてキーワード引数で `BOResult` を構築している。
+
+```python
+# test_bo_algorithm.py 内の使用例
+BOResult(
+    trials=trials,
+    best_params=best.params,
+    best_objective=best.objective,
+    best_trial_id=best.trial_id,
+    bo_config=cfg,
+    objective_name="mock",
+)
+```
+
+`@dataclass` 継承でのフィールド順の制約（デフォルト値なしフィールドがデフォルト値ありフィールドより後に来れない）を
+回避するため、`BaseOptimizationResult` のすべてのフィールドはデフォルト値を持たない設計とする。
+
+```python
+@dataclass(frozen=True)
+class BaseOptimizationResult:
+    trials: list[TrialResult]           # デフォルトなし
+    best_params: dict[str, float | int] # デフォルトなし
+    best_objective: float               # デフォルトなし
+    best_trial_id: int                  # デフォルトなし
+    objective_name: str                 # デフォルトなし
+
+@dataclass(frozen=True)
+class BOResult(BaseOptimizationResult):
+    bo_config: BOConfig                 # デフォルトなし（追加フィールド）
+```
+
+### 8-6. `LLMResult` のフィールド構造変更
+
+現在の `LLMResult` と変更後のフィールド対応：
+
+| フィールド | 現在 | 変更後 | テスト影響 |
+|---|---|---|---|
+| `trials` | `LLMResult` 直接定義 | `BaseOptimizationResult` から継承 | なし |
+| `best_params` | `LLMResult` 直接定義 | `BaseOptimizationResult` から継承 | なし |
+| `best_objective` | `LLMResult` 直接定義 | `BaseOptimizationResult` から継承 | なし |
+| `best_trial_id` | `LLMResult` 直接定義 | `BaseOptimizationResult` から継承 | なし |
+| `objective_name` | `LLMResult` 直接定義 | `BaseOptimizationResult` から継承 | なし |
+| `llm_config` | `LLMResult` 固有フィールド | `LLMResult` 固有フィールド（変更なし） | なし |
+| `iteration_metas` | `LLMResult` 固有フィールド | `LLMResult` 固有フィールド（変更なし） | なし |
+
+すべてのテストがキーワード引数で構築しているため、フィールド順の変更は問題なし。
+
+### 8-7. `BaseChain.invoke` シグネチャの `SearchSpace` 型
+
+`opt_agent/chain.py` の `BaseChain.invoke` は現在 `from bo.space import SearchSpace` を参照している。
+変更後は `from opt_tool.space import SearchSpace` を参照するが、`bo/__init__.py` の再エクスポートにより
+`from bo import SearchSpace` で得られるオブジェクトは同一クラスであるため、
+`MockChain.invoke` のシグネチャ互換性は維持される。
+
+### 8-8. テスト全通過のための実装チェックリスト
+
+リファクタリング実装時に確認すべき項目：
+
+- [ ] `bo/__init__.py` が `TrialResult`, `SearchSpace`, `HyperParameter` を `opt_tool` から再エクスポートしている
+- [ ] `AccuracyObjective`, `AccuracySpeedObjective` が `bo/objective.py` に残っている
+- [ ] `patch("bo.objective.BurgersPINNSolver")` が有効なパッチパスである
+- [ ] `BOConfig`, `BOResult` が `@dataclass(frozen=True)` に変換されている
+- [ ] `BOResult` のフィールド順がデフォルト値なし → デフォルト値あり の順になっている
+- [ ] `TrialResult` が Pydantic `BaseModel` のまま維持されている（ValidationError を送出すること）
+- [ ] `LLMResult` が引き続き `@dataclass(frozen=True)` として動作する（`FrozenInstanceError` を送出すること）
+- [ ] `LLMConfig` のフィールド名 `n_initial`, `n_iterations`, `seed` とデフォルト値が変更されていない
+- [ ] `opt_agent/__init__.py` が `BaseChain`, `LLMConfig`, `LLMIterationMeta`, `LLMOptimizer`, `LLMProposal`, `LLMResult`, `PromptBuilder` を引き続きエクスポートしている
