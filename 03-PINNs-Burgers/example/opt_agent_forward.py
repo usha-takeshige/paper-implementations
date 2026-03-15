@@ -243,6 +243,7 @@ def plot_best_solution_heatmap(
 
 def main() -> None:
     """Run LLM-based hyperparameter optimization for PINN training."""
+    torch.manual_seed(42)
     print("=== LLM-based Optimization: PINN Hyperparameter Tuning ===")
     print(f"  nu = {NU_TRUE:.6f}  (0.01 / pi)\n")
 

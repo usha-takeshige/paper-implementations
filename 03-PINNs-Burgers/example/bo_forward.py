@@ -260,6 +260,7 @@ def plot_best_solution_heatmap(
 
 def main() -> None:
     """Run Bayesian optimization for PINN hyperparameter tuning."""
+    torch.manual_seed(42)
     print("=== Bayesian Optimization: PINN Hyperparameter Tuning ===")
     print(f"  nu = {NU_TRUE:.6f}  (0.01 / pi)\n")
 
