@@ -48,10 +48,18 @@ $$u(0, x) = -\sin(\pi x), \quad u(t, \pm 1) = 0$$
 │   ├── result.py       # BOResult, TrialResult, BOConfig
 │   ├── report.py       # ReportGenerator (Markdown レポート)
 │   └── search_space.py # SearchSpace, HyperParameter
+├── src/opt_agent/
+│   ├── config.py       # LLMConfig, LLMResult, LLMIterationMeta
+│   ├── optimizer.py    # LLMOptimizer (Facade)
+│   ├── chain.py        # BaseChain ABC, GeminiChain (LangChain + Gemini)
+│   ├── prompt.py       # PromptBuilder (システム・ヒュープロンプト構築)
+│   ├── proposal.py     # LLMProposal (Pydantic 構造化出力スキーマ)
+│   └── report.py       # IterationReportWriter (逐次 Markdown レポート)
 ├── example/
-│   ├── forward_problem.py   # 順問題の使用例
-│   ├── inverse_problem.py   # 逆問題の使用例
-│   └── bo_forward.py        # ベイズ最適化によるハイパーパラメータ探索
+│   ├── forward_problem.py      # 順問題の使用例
+│   ├── inverse_problem.py      # 逆問題の使用例
+│   ├── bo_forward.py           # ベイズ最適化によるハイパーパラメータ探索
+│   └── opt_agent_forward.py    # LLM エージェントによるハイパーパラメータ探索
 ├── tests/
 │   ├── test_algorithm.py    # アルゴリズム実装テスト
 │   ├── test_theory.py       # 理論的性質テスト
@@ -73,7 +81,14 @@ cd 03-PINNs-Burgers
 uv sync
 ```
 
-**依存ライブラリ**: `torch`, `numpy`, `scipy`, `matplotlib`, `seaborn`, `pydantic`, `botorch`
+**依存ライブラリ**: `torch`, `numpy`, `scipy`, `matplotlib`, `seaborn`, `pydantic`, `botorch`, `langchain-google-genai`
+
+LLM エージェント最適化を使用する場合は `.env` ファイルに以下を設定する。
+
+```bash
+GEMINI_API_KEY=<your-api-key>
+GEMINI_MODEL_NAME=gemini-2.0-flash
+```
 
 ---
 
@@ -145,6 +160,37 @@ uv run python example/bo_forward.py
 | `AccuracySpeedObjective` | $1 / (\text{rel\_l2\_error} \times t)$ | 精度と学習速度を同時に最大化 |
 
 `bo_forward.py` の `objective = AccuracyObjective(...)` を `AccuracySpeedObjective(...)` に変更するだけで切り替えられる。
+
+### LLM エージェントによるハイパーパラメータ探索
+
+Google Gemini（LangChain 経由）を用いた LLM エージェントが、試行履歴を分析して次の探索点を自然言語で推論しながらハイパーパラメータを最適化する。
+
+```bash
+uv run python example/opt_agent_forward.py
+```
+
+出力先: `example/opt_agent_output/`
+
+| ファイル | 内容 |
+|---------|------|
+| `opt_agent_convergence.png` | 累積ベスト目的関数値の推移 |
+| `opt_agent_objective_scatter.png` | 各試行の目的関数値（Sobol 初期 vs LLM 提案） |
+| `opt_agent_parallel_coords.png` | ハイパーパラメータの並行座標プロット |
+| `opt_agent_best_solution_heatmap.png` | 最良パラメータによる予測解 vs 参照解 |
+| `opt_agent_report.md` | LLM の分析・推論を含む逐次 Markdown レポート |
+
+**最適化フロー**
+
+1. **Phase 1（Sobol 初期探索）**: 準乱数列で `n_initial` 点をサンプリングして評価
+2. **Phase 2（LLM 誘導探索）**: 試行履歴全体を LLM に提示し、分析・推論に基づく次点を提案させて評価を繰り返す
+
+**LLMConfig**
+
+| パラメータ | デフォルト | 意味 |
+|-----------|-----------|------|
+| `n_initial` | 5 | Phase 1 の初期サンプル数 |
+| `n_iterations` | 20 | Phase 2 の LLM 提案回数 |
+| `seed` | 42 | Sobol 乱数シード（再現性） |
 
 ---
 
