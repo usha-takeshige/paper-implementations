@@ -6,13 +6,16 @@
 
 **最適化対象**：`NetworkConfig` および `TrainingConfig` の一部パラメータ
 
-**目的関数**：
+**目的関数**（使用するクラスにより選択）：
 
-$$\text{objective}(h) = \frac{1}{e_{\text{rel}}(h) \cdot T(h)}$$
+| クラス | 計算式 | 意味 |
+|--------|--------|------|
+| `AccuracyObjective` | $\text{objective} = -e_{\text{rel}}$ | 精度のみ最大化（L2 誤差を最小化） |
+| `AccuracySpeedObjective` | $\text{objective} = \dfrac{1}{e_{\text{rel}}(h) \cdot T(h)}$ | 精度と速度の両立を最大化 |
 
 - $e_{\text{rel}}$：テストデータに対する相対 L2 誤差（低いほど良い）
 - $T$：学習にかかった経過時間 [秒]（低いほど良い）
-- objective が **高いほど** 「精度が高く、かつ高速」であることを意味する
+- objective が **高いほど** 良い結果を意味する
 
 ベイズ最適化はこの `objective` を **最大化** する方向で探索する。
 
@@ -39,16 +42,23 @@ $$\text{objective}(h) = \frac{1}{e_{\text{rel}}(h) \cdot T(h)}$$
 
 ---
 
-## 3. モジュール構成（`src/bo/`）
+## 3. モジュール構成
 
 ```
-src/bo/
-├── __init__.py      # パブリック API のエクスポート
-├── space.py         # HyperParameter, SearchSpace
-├── objective.py     # ObjectiveFunction
-├── optimizer.py     # BayesianOptimizer（BoTorch を使用したメインループ）
-├── report.py        # ReportGenerator（マークダウンレポートの生成）
-└── result.py        # TrialResult, BOResult
+src/opt_tool/               # 共通基盤（bo / opt_agent 双方が依存）
+├── __init__.py             # パブリック API のエクスポート
+├── base.py                 # BaseOptimizerConfig, BaseOptimizationResult, BaseOptimizer
+├── objective.py            # ObjectiveFunction ABC
+├── result.py               # TrialResult（Pydantic モデル）
+├── space.py                # HyperParameter, SearchSpace（Pydantic モデル）
+└── report_utils.py         # 共通 Markdown レポートユーティリティ
+
+src/bo/                     # BO 固有の実装
+├── __init__.py             # パブリック API のエクスポート
+├── objective.py            # PINNObjectiveFunction, AccuracyObjective, AccuracySpeedObjective
+├── optimizer.py            # BayesianOptimizer（BoTorch を使用したメインループ）
+├── report.py               # ReportGenerator（マークダウンレポートの生成）
+└── result.py               # BOConfig, BOResult
 ```
 
 BoTorch が GP サロゲートと獲得関数を提供するため、`surrogate.py` と `acquisition.py` は不要。
@@ -60,6 +70,8 @@ from bo import (
     SearchSpace,
     HyperParameter,
     ObjectiveFunction,
+    AccuracyObjective,
+    AccuracySpeedObjective,
     BayesianOptimizer,
     BOConfig,
     BOResult,
@@ -68,98 +80,78 @@ from bo import (
 )
 ```
 
+`SearchSpace`, `HyperParameter`, `ObjectiveFunction`, `TrialResult` は `opt_tool` から後方互換のために再エクスポートしている。
+
 ---
 
 ## 4. クラス設計
 
 ### 4-1. クラス一覧
 
-| クラス名 | 種別 | 責務 |
-|---------|------|------|
-| `HyperParameter` | Pydantic モデル（frozen） | 1つのハイパーパラメータの定義（名前・型・範囲・スケール）を保持する |
-| `SearchSpace` | Pydantic モデル（frozen） | ハイパーパラメータ群の定義と、BoTorch テンソルへの変換・逆変換を担う |
-| `BOConfig` | Pydantic モデル（frozen） | ベイズ最適化の設定値（初期サンプル数・反復数・獲得関数種別・乱数シード等）を保持する |
-| `TrialResult` | Pydantic モデル（frozen） | 1回の試行結果（ハイパーパラメータ値・目的関数値・精度・実行時間）を保持する |
-| `BOResult` | Pydantic モデル（frozen） | 最適化全体の結果（全試行履歴・最良パラメータ）を保持する |
-| `ObjectiveFunction` | 具象クラス | ハイパーパラメータを受け取り、PINNs を学習させて目的関数値を計算する |
-| `BayesianOptimizer` | 具象クラス | BoTorch の `SingleTaskGP` + `optimize_acqf` を用いた BO メインループを実行する |
-| `ReportGenerator` | 具象クラス | `BOResult` を受け取り、マークダウン形式のレポートファイルを生成する |
+| クラス名 | 種別 | 所在モジュール | 責務 |
+|---------|------|--------------|------|
+| `HyperParameter` | Pydantic モデル（frozen） | `opt_tool` | 1つのハイパーパラメータの定義（名前・型・範囲・スケール）を保持する |
+| `SearchSpace` | Pydantic モデル（frozen） | `opt_tool` | ハイパーパラメータ群の定義と、BoTorch テンソルへの変換・逆変換を担う |
+| `TrialResult` | Pydantic モデル（frozen） | `opt_tool` | 1回の試行結果（ハイパーパラメータ値・目的関数値・精度・実行時間）を保持する |
+| `ObjectiveFunction` | 抽象クラス（ABC） | `opt_tool` | 目的関数の共通インターフェース（`name` プロパティ・`__call__` メソッド） |
+| `BaseOptimizerConfig` | dataclass（frozen） | `opt_tool` | 共通の最適化設定（`n_initial`, `n_iterations`, `seed`）を保持する |
+| `BaseOptimizationResult` | dataclass（frozen） | `opt_tool` | 共通の最適化結果フィールドを保持する（`trials`, `best_params` 等） |
+| `BaseOptimizer` | 抽象クラス（ABC） | `opt_tool` | Template Method パターンで 3 フェーズ最適化の骨格を提供する |
+| `BOConfig` | dataclass（frozen） | `bo` | BO 固有の設定値（獲得関数種別・`num_restarts` 等）を保持する。`BaseOptimizerConfig` を継承 |
+| `BOResult` | dataclass（frozen） | `bo` | BO 全体の結果を保持する。`BaseOptimizationResult` を継承し `bo_config` を追加 |
+| `PINNObjectiveFunction` | 具象基底クラス | `bo` | PINN 学習・評価の共通ロジックを実装した中間クラス。`_compute_objective` を抽象メソッドとして定義 |
+| `AccuracyObjective` | 具象クラス | `bo` | `PINNObjectiveFunction` のサブクラス。精度のみ最大化（objective = -rel_l2_error） |
+| `AccuracySpeedObjective` | 具象クラス | `bo` | `PINNObjectiveFunction` のサブクラス。精度と速度の両立を最大化 |
+| `BayesianOptimizer` | 具象クラス | `bo` | `BaseOptimizer` を継承。BoTorch の `SingleTaskGP` + `optimize_acqf` を用いた BO メインループを実行する |
+| `ReportGenerator` | 具象クラス | `bo` | `BOResult` を受け取り、マークダウン形式のレポートファイルを生成する |
 
 ---
 
 ### 4-2. 各クラスの定義
 
-#### `HyperParameter`
+#### `HyperParameter`（`opt_tool/space.py`）
 
 **種別**：Pydantic モデル（frozen）
 **責務**：1つのハイパーパラメータの名前・型・探索範囲・スケールを保持する
 
 ```python
-from pydantic import BaseModel, Field
-from pydantic import ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal
 
 class HyperParameter(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    name: str = Field(description="パラメータ名（NetworkConfig / TrainingConfig のフィールド名）")
-    param_type: Literal["int", "float"] = Field(description="パラメータの型")
-    low: float = Field(description="探索範囲の下限（実際のパラメータスケール）")
-    high: float = Field(description="探索範囲の上限（実際のパラメータスケール）")
-    log_scale: bool = Field(default=False, description="True の場合、対数スケールで探索する")
+    name: str
+    param_type: Literal["int", "float"]
+    low: float
+    high: float
+    log_scale: bool = False
 ```
 
 ---
 
-#### `SearchSpace`
+#### `SearchSpace`（`opt_tool/space.py`）
 
 **種別**：Pydantic モデル（frozen）
 **責務**：ハイパーパラメータ群の定義と、BoTorch が要求する `[0, 1]^d` への正規化変換・逆変換を担う
 
 ```python
-import torch
-import numpy as np
-
 class SearchSpace(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    parameters: list[HyperParameter] = Field(description="チューニング対象のハイパーパラメータ一覧")
+    parameters: list[HyperParameter]
 
     @property
-    def dim(self) -> int:
-        """探索空間の次元数（パラメータ数）を返す。"""
-        ...
+    def dim(self) -> int: ...
 
     @property
-    def bounds(self) -> torch.Tensor:
-        """
-        BoTorch の optimize_acqf に渡す正規化済み境界テンソル。
-        shape: (2, dim), dtype: float64
-        全次元で [0, 1] に収まる（正規化後）。
-        """
-        ...
+    def bounds(self) -> torch.Tensor: ...  # shape (2, dim), all values in [0, 1]
 
-    def sample_sobol(self, n: int, seed: int) -> torch.Tensor:
-        """
-        Sobol 列で n 点をサンプリングして返す（初期探索用）。
-        BoTorch の draw_sobol_samples を使用。
-        Returns: shape (n, dim), dtype: float64, 値域 [0, 1]^d
-        """
-        ...
+    def sample_sobol(self, n: int, seed: int) -> torch.Tensor: ...  # (n, dim)
 
-    def to_tensor(self, params: dict[str, float | int]) -> torch.Tensor:
-        """
-        パラメータ dict を正規化済み BoTorch 入力テンソルに変換する。
-        Returns: shape (1, dim), dtype: float64
-        """
-        ...
+    def to_tensor(self, params: dict[str, float | int]) -> torch.Tensor: ...  # (1, dim)
 
-    def from_tensor(self, x: torch.Tensor) -> dict[str, float | int]:
-        """
-        正規化済みテンソル（shape: (dim,) または (1, dim)）をパラメータ dict に逆変換する。
-        int 型は四捨五入する。
-        """
-        ...
+    def from_tensor(self, x: torch.Tensor) -> dict[str, float | int]: ...
 ```
 
 **正規化規則**：
@@ -173,36 +165,39 @@ class SearchSpace(BaseModel):
 
 ---
 
-#### `BOConfig`
+#### `BaseOptimizerConfig`（`opt_tool/base.py`）
 
-**種別**：Pydantic モデル（frozen）
-**責務**：ベイズ最適化の設定値を保持する
+**種別**：dataclass（frozen）
+**責務**：共通の最適化設定フィールドを保持する。サブクラスがアルゴリズム固有フィールドを追加する
 
 ```python
-class BOConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    n_initial: int = Field(default=5, description="初期 Sobol サンプル数")
-    n_iterations: int = Field(default=20, description="BO 反復回数（GP 更新サイクル数）")
-    acquisition: Literal["EI", "UCB"] = Field(default="EI", description="獲得関数の種類")
-    ucb_beta: float = Field(
-        default=2.0,
-        description="UCB の探索係数 β（acquisition='UCB' 時のみ有効）。BoTorch UCB の beta パラメータ。",
-    )
-    num_restarts: int = Field(
-        default=10,
-        description="optimize_acqf の多点再スタート数。大きいほど局所最適を回避しやすい。",
-    )
-    raw_samples: int = Field(
-        default=512,
-        description="optimize_acqf の初期候補サンプル数。",
-    )
-    seed: int = Field(default=42, description="乱数シード（再現性確保用）")
+@dataclass(frozen=True)
+class BaseOptimizerConfig:
+    n_initial: int = 5
+    n_iterations: int = 20
+    seed: int = 42
 ```
 
 ---
 
-#### `TrialResult`
+#### `BOConfig`（`bo/result.py`）
+
+**種別**：dataclass（frozen）。`BaseOptimizerConfig` を継承
+**責務**：ベイズ最適化の設定値を保持する
+
+```python
+@dataclass(frozen=True)
+class BOConfig(BaseOptimizerConfig):
+    # n_initial, n_iterations, seed は BaseOptimizerConfig から継承
+    acquisition: Literal["EI", "UCB"] = "EI"
+    ucb_beta: float = 2.0
+    num_restarts: int = 10
+    raw_samples: int = 512
+```
+
+---
+
+#### `TrialResult`（`opt_tool/result.py`）
 
 **種別**：Pydantic モデル（frozen）
 **責務**：1回の試行（ハイパーパラメータ評価）の結果を保持する
@@ -211,41 +206,73 @@ class BOConfig(BaseModel):
 class TrialResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    trial_id: int = Field(description="試行番号（0 始まり）")
-    params: dict[str, float | int] = Field(description="評価したハイパーパラメータ値（実スケール）")
-    objective: float = Field(description="目的関数値 = 1 / (rel_l2_error × elapsed_time)")
-    rel_l2_error: float = Field(description="相対 L2 誤差 ‖u_pred - u_ref‖₂ / ‖u_ref‖₂")
-    elapsed_time: float = Field(description="学習にかかった経過時間 [秒]")
-    is_initial: bool = Field(description="True: Sobol 初期サンプル、False: BO 提案点")
+    trial_id: int
+    params: dict[str, float | int]
+    objective: float   # 高いほど良い。計算式は使用する ObjectiveFunction サブクラスに依存
+    rel_l2_error: float
+    elapsed_time: float
+    is_initial: bool
 ```
 
 ---
 
-#### `BOResult`
+#### `BaseOptimizationResult`（`opt_tool/base.py`）
 
-**種別**：Pydantic モデル（frozen）
+**種別**：dataclass（frozen）
+**責務**：共通の最適化結果フィールドを保持する。サブクラスがアルゴリズム固有フィールドを追加する
+
+```python
+@dataclass(frozen=True)
+class BaseOptimizationResult:
+    trials: list[TrialResult]
+    best_params: dict[str, float | int]
+    best_objective: float
+    best_trial_id: int
+    objective_name: str
+```
+
+---
+
+#### `BOResult`（`bo/result.py`）
+
+**種別**：dataclass（frozen）。`BaseOptimizationResult` を継承
 **責務**：最適化全体の結果を保持する
 
 ```python
-class BOResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    trials: list[TrialResult] = Field(description="全試行結果（初期サンプル + BO 反復）")
-    best_params: dict[str, float | int] = Field(description="目的関数が最大の試行のハイパーパラメータ")
-    best_objective: float = Field(description="最大の目的関数値")
-    best_trial_id: int = Field(description="最良試行の trial_id")
-    bo_config: BOConfig = Field(description="使用した BO 設定（レポート記載用）")
+@dataclass(frozen=True)
+class BOResult(BaseOptimizationResult):
+    # trials, best_params, best_objective, best_trial_id, objective_name は BaseOptimizationResult から継承
+    bo_config: BOConfig
 ```
 
 ---
 
-#### `ObjectiveFunction`
+#### `ObjectiveFunction`（`opt_tool/objective.py`）
 
-**種別**：具象クラス
-**責務**：ハイパーパラメータを受け取り、PINNs の学習と評価を実行し、目的関数値を返す
+**種別**：抽象クラス（ABC）
+**責務**：目的関数の共通インターフェースを定義する
 
 ```python
-class ObjectiveFunction:
+class ObjectiveFunction(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str: ...
+
+    @abstractmethod
+    def __call__(
+        self, params: dict[str, float | int], trial_id: int, is_initial: bool
+    ) -> TrialResult: ...
+```
+
+---
+
+#### `PINNObjectiveFunction`（`bo/objective.py`）
+
+**種別**：具象基底クラス。`ObjectiveFunction` を継承
+**責務**：PINN の学習・推論・誤差計算の共通ロジックを実装する。スカラー目的関数値の計算は `_compute_objective` に委譲する
+
+```python
+class PINNObjectiveFunction(ObjectiveFunction):
     def __init__(
         self,
         pde_config: PDEConfig,
@@ -255,47 +282,81 @@ class ObjectiveFunction:
         t_mesh: np.ndarray,
         usol: np.ndarray,
         base_training_config: TrainingConfig,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        pde_config:
-            固定の PDE 設定（ν 等）。
-        boundary_data:
-            学習に使う初期・境界条件データ。
-        collocation:
-            コロケーション点。
-        x_mesh, t_mesh:
-            評価用グリッド（meshgrid 形式）。
-        usol:
-            参照解 shape (256, 100)。相対 L2 誤差の計算に使用。
-        base_training_config:
-            n_u, n_f, epochs_lbfgs など固定の学習設定。
-            n_hidden_layers / n_neurons / lr / epochs_adam はハイパーパラメータで上書きされる。
-        """
-        ...
+    ) -> None: ...
 
-    def __call__(self, params: dict[str, float | int], trial_id: int, is_initial: bool) -> TrialResult:
-        """
-        ハイパーパラメータを受け取り、1回の学習・評価を行い TrialResult を返す。
+    @abstractmethod
+    def _compute_objective(self, rel_l2_error: float, elapsed_time: float) -> float: ...
 
-        処理フロー
-        ----------
-        1. params から NetworkConfig / TrainingConfig を構築する
-        2. BurgersPINNSolver.solve_forward() を time.perf_counter() で計時しながら実行する
-        3. 学習済みモデルで評価グリッド上の u_pred を計算する（torch.no_grad()）
-        4. rel_l2_error = ‖u_pred - usol‖_F / ‖usol‖_F を計算する
-        5. objective = 1 / max(rel_l2_error × T, 1e-10) を計算する
-        6. TrialResult を構築して返す
-        """
+    def __call__(self, params, trial_id, is_initial) -> TrialResult:
+        # 1. params から NetworkConfig / TrainingConfig を構築
+        # 2. BurgersPINNSolver.solve_forward() を計時しながら実行
+        # 3. 評価グリッド上で u_pred を計算（torch.no_grad()）
+        # 4. rel_l2_error = ||u_pred - usol||_F / ||usol||_F を計算
+        # 5. objective = self._compute_objective(rel_l2_error, elapsed_time)
+        # 6. TrialResult を返す
         ...
 ```
 
 ---
 
-#### `BayesianOptimizer`
+#### `AccuracyObjective` / `AccuracySpeedObjective`（`bo/objective.py`）
 
-**種別**：具象クラス
+**種別**：具象クラス。`PINNObjectiveFunction` を継承
+
+```python
+class AccuracyObjective(PINNObjectiveFunction):
+    """objective = -rel_l2_error"""
+    @property
+    def name(self) -> str: return "Accuracy  -rel_l2_error"
+
+    def _compute_objective(self, rel_l2_error, _elapsed_time) -> float:
+        return -rel_l2_error
+
+
+class AccuracySpeedObjective(PINNObjectiveFunction):
+    """objective = 1 / max(rel_l2_error × elapsed_time, 1e-10)"""
+    @property
+    def name(self) -> str: return "Accuracy × Speed  1/(rel_l2_error × elapsed_time)"
+
+    def _compute_objective(self, rel_l2_error, elapsed_time) -> float:
+        return 1.0 / max(rel_l2_error * elapsed_time, 1e-10)
+```
+
+---
+
+#### `BaseOptimizer`（`opt_tool/base.py`）
+
+**種別**：抽象クラス（ABC）
+**責務**：Template Method パターンで 3 フェーズ最適化ループの骨格を提供する。Phase 1 の Sobol 初期探索は共通実装。Phase 2・3 はサブクラスが実装する
+
+```python
+class BaseOptimizer(ABC):
+    def __init__(self, search_space, objective, config): ...
+
+    def optimize(self) -> BaseOptimizationResult:
+        initial_trials = self._run_initial_exploration()   # Phase 1 (共通)
+        all_trials = self._run_sequential_search(initial_trials)  # Phase 2 (抽象)
+        return self._build_result(all_trials)             # Phase 3 (抽象)
+
+    def _run_initial_exploration(self) -> list[TrialResult]:
+        """Phase 1: Sobol で n_initial 点をサンプリングして評価する"""
+        ...
+
+    @abstractmethod
+    def _run_sequential_search(self, initial_trials) -> list[TrialResult]: ...
+
+    @abstractmethod
+    def _build_result(self, trials) -> BaseOptimizationResult: ...
+
+    @staticmethod
+    def _log_trial(trial: TrialResult, label: str) -> None: ...
+```
+
+---
+
+#### `BayesianOptimizer`（`bo/optimizer.py`）
+
+**種別**：具象クラス。`BaseOptimizer` を継承
 **責務**：BoTorch の `SingleTaskGP` と `optimize_acqf` を用いた BO メインループを実行する
 
 **使用する BoTorch コンポーネント**：
@@ -309,97 +370,61 @@ class ObjectiveFunction:
 | `botorch.acquisition.analytic.LogExpectedImprovement` | EI 獲得関数（対数版。数値安定性が高い） |
 | `botorch.acquisition.analytic.UpperConfidenceBound` | UCB 獲得関数 |
 | `botorch.optim.optimize_acqf` | 獲得関数を勾配法で最大化して次点を決定する |
-| `botorch.utils.sampling.draw_sobol_samples` | 初期 Sobol サンプリング |
+| `botorch.utils.sampling.draw_sobol_samples` | 初期 Sobol サンプリング（`BaseOptimizer._run_initial_exploration` 経由） |
 
 ```python
-import torch
-from botorch.models import SingleTaskGP
-from botorch.models.transforms.outcome import Standardize
-from botorch.fit import fit_gpytorch_mll
-from botorch.acquisition.analytic import LogExpectedImprovement, UpperConfidenceBound
-from botorch.optim import optimize_acqf
-from gpytorch.mlls import ExactMarginalLogLikelihood
+class BayesianOptimizer(BaseOptimizer):
+    def __init__(self, search_space: SearchSpace, objective, config: BOConfig) -> None:
+        super().__init__(search_space, objective, config)
 
-class BayesianOptimizer:
-    def __init__(
-        self,
-        search_space: SearchSpace,
-        objective: ObjectiveFunction,
-        config: BOConfig,
-    ) -> None: ...
-
-    def optimize(self) -> BOResult:
-        """
-        ベイズ最適化を実行して BOResult を返す。
-
-        処理フロー
-        ----------
-        Phase 1 — 初期 Sobol サンプリング（config.n_initial 点）
-          1. SearchSpace.sample_sobol() で n_initial 点を生成する（shape: (n_initial, dim)）
-          2. 各点を SearchSpace.from_tensor() でパラメータ dict に変換する
-          3. ObjectiveFunction を評価して TrialResult を記録する
-          4. 観測データ train_X (n_initial, dim), train_Y (n_initial, 1) を torch.float64 で構築する
-
-        Phase 2 — GP ベースの逐次探索（config.n_iterations 回）
-          5. SingleTaskGP(train_X, train_Y, outcome_transform=Standardize(m=1)) で GP を構築する
-          6. fit_gpytorch_mll() で GP をフィッティングする
-          7. config.acquisition に応じて LogExpectedImprovement または UpperConfidenceBound を構築する
-          8. optimize_acqf() で次点 x_next (1, dim) を取得する
-               - bounds: SearchSpace.bounds（shape: (2, dim)）
-               - num_restarts: config.num_restarts
-               - raw_samples: config.raw_samples
-          9. SearchSpace.from_tensor(x_next) でパラメータ dict に変換する
-          10. ObjectiveFunction を評価して TrialResult を記録する
-          11. train_X, train_Y に新点を追加する
-          12. 5〜11 を n_iterations 回繰り返す
-
-        Phase 3 — 結果の集計
-          13. 全試行から最良の TrialResult を特定する
-          14. BOResult を構築して返す
+    def _run_sequential_search(self, initial_trials: list[TrialResult]) -> list[TrialResult]:
+        """Phase 2: GP ガイド付き逐次探索。
+        Phase 1 と同じシードで sample_sobol を再呼び出しして train_X を再構築（決定論的）。
+        各反復で GP フィット → 獲得関数最適化 → 評価 → train_X/Y 更新を繰り返す。
         """
         ...
+
+    def _build_result(self, trials: list[TrialResult]) -> BOResult:
+        """Phase 3: 最良試行を選定して BOResult を構築する。"""
+        ...
+```
+
+**`_run_sequential_search` の処理フロー**：
+
+```
+1. train_X = sample_sobol(n_initial, seed)  （Phase 1 と同一シードで再構築）
+2. train_Y = [[t.objective] for t in initial_trials]
+3. for iteration in range(n_iterations):
+   a. SingleTaskGP(train_X, train_Y, outcome_transform=Standardize(m=1))
+   b. fit_gpytorch_mll()
+   c. acquisition に応じて LogExpectedImprovement または UpperConfidenceBound を構築
+   d. optimize_acqf(q=1, bounds, num_restarts, raw_samples) → x_next (1, dim)
+   e. params = from_tensor(x_next)
+   f. trial = objective(params, trial_id, is_initial=False)
+   g. train_X, train_Y に x_next, trial.objective を追記
 ```
 
 ---
 
-#### `ReportGenerator`
+#### `ReportGenerator`（`bo/report.py`）
 
 **種別**：具象クラス
 **責務**：`BOResult` を受け取り、マークダウン形式のレポートファイルを生成する
 
 ```python
 class ReportGenerator:
-    def __init__(self, output_dir: str) -> None:
-        """
-        Parameters
-        ----------
-        output_dir:
-            レポートの出力先ディレクトリ（例: "example/output"）。
-        """
-        ...
+    def __init__(self, output_dir: str) -> None: ...
 
     def generate(self, result: BOResult, search_space: SearchSpace) -> str:
-        """
-        BOResult からマークダウンレポートを生成してファイルに保存する。
-
-        Parameters
-        ----------
-        result:
-            BayesianOptimizer.optimize() の戻り値。
-        search_space:
-            探索空間の定義（レポートのヘッダーに記載）。
-
-        Returns
-        -------
-        str
-            保存したファイルのパス。
+        """BOResult からマークダウンレポートを生成してファイルに保存する。
+        Returns: 保存したファイルのパス
         """
         ...
 ```
 
 **出力ファイル名**：`bo_report.md`（`output_dir` 以下）
 
-**レポートの構成**：
+**レポートの構成**（`opt_tool/report_utils.py` の共通ユーティリティを使用）：
 
 ```markdown
 # Bayesian Optimization Report
@@ -413,6 +438,7 @@ Generated: {実行日時 ISO 8601}
 
 | Parameter         | Value  |
 |-------------------|--------|
+| objective         | {目的関数名} |
 | n_initial         | {値}   |
 | n_iterations      | {値}   |
 | acquisition       | {EI/UCB} |
@@ -438,10 +464,7 @@ Generated: {実行日時 ISO 8601}
 
 | Hyperparameter    | Value  |
 |-------------------|--------|
-| n_hidden_layers   | {値}   |
-| n_neurons         | {値}   |
-| lr                | {値:.4e} |
-| epochs_adam       | {値}   |
+...
 
 **Metrics**:
 - Relative L2 Error: {rel_l2_error:.4e}
@@ -453,9 +476,8 @@ Generated: {実行日時 ISO 8601}
 
 | Trial | Type    | n_layers | n_neurons | lr       | epochs_adam | Rel L2 Error | Time (s) | Objective  |
 |-------|---------|----------|-----------|----------|-------------|--------------|----------|------------|
-| 0     | initial | {値}     | {値}      | {値:.2e} | {値}        | {値:.4e}     | {値:.2f} | {値:.4e}   |
-| ...   | ...     | ...      | ...       | ...      | ...         | ...          | ...      | ...        |
-| {N}   | BO      | {値}     | {値}      | {値:.2e} | {値}        | {値:.4e}     | {値:.2f} | {値:.4e}   |
+| 0     | initial | ...      |           |          |             |              |          |            |
+| ...   | BO      | ...      |           |          |             |              |          |            |
 
 > **Type**: `initial` = Sobol initial sample, `BO` = Bayesian optimization proposal
 
@@ -477,63 +499,94 @@ Best objective per trial (cumulative max):
 
 ```mermaid
 classDiagram
-    class BayesianOptimizer {
-        +optimize() BOResult
+    namespace opt_tool {
+        class BaseOptimizerConfig {
+            +n_initial int
+            +n_iterations int
+            +seed int
+        }
+        class BaseOptimizationResult {
+            +trials list~TrialResult~
+            +best_params dict
+            +best_objective float
+            +best_trial_id int
+            +objective_name str
+        }
+        class BaseOptimizer {
+            <<abstract>>
+            +optimize() BaseOptimizationResult
+            #_run_initial_exploration() list~TrialResult~
+            #_run_sequential_search(initial_trials)* list~TrialResult~
+            #_build_result(trials)* BaseOptimizationResult
+            #_log_trial(trial, label)$
+        }
+        class ObjectiveFunction {
+            <<abstract>>
+            +name str
+            +__call__(params, trial_id, is_initial)* TrialResult
+        }
+        class SearchSpace {
+            +parameters list~HyperParameter~
+            +dim int
+            +bounds Tensor
+            +sample_sobol(n, seed) Tensor
+            +to_tensor(params) Tensor
+            +from_tensor(x) dict
+        }
+        class HyperParameter {
+            +name str
+            +param_type str
+            +low float
+            +high float
+            +log_scale bool
+        }
+        class TrialResult {
+            +trial_id int
+            +params dict
+            +objective float
+            +rel_l2_error float
+            +elapsed_time float
+            +is_initial bool
+        }
     }
 
-    class SearchSpace {
-        +parameters list~HyperParameter~
-        +dim int
-        +bounds Tensor
-        +sample_sobol(n, seed) Tensor
-        +to_tensor(params) Tensor
-        +from_tensor(x) dict
+    namespace bo {
+        class BOConfig {
+            +acquisition str
+            +ucb_beta float
+            +num_restarts int
+            +raw_samples int
+        }
+        class BOResult {
+            +bo_config BOConfig
+        }
+        class PINNObjectiveFunction {
+            #_compute_objective(rel_l2_error, elapsed_time)* float
+            +__call__(params, trial_id, is_initial) TrialResult
+        }
+        class AccuracyObjective {
+            +name str
+            #_compute_objective(rel_l2_error, _elapsed_time) float
+        }
+        class AccuracySpeedObjective {
+            +name str
+            #_compute_objective(rel_l2_error, elapsed_time) float
+        }
+        class BayesianOptimizer {
+            #_run_sequential_search(initial_trials) list~TrialResult~
+            #_build_result(trials) BOResult
+        }
+        class ReportGenerator {
+            +generate(result, search_space) str
+        }
     }
 
-    class HyperParameter {
-        +name str
-        +param_type str
-        +low float
-        +high float
-        +log_scale bool
-    }
-
-    class BOConfig {
-        +n_initial int
-        +n_iterations int
-        +acquisition str
-        +ucb_beta float
-        +num_restarts int
-        +raw_samples int
-        +seed int
-    }
-
-    class ObjectiveFunction {
-        +__call__(params, trial_id, is_initial) TrialResult
-    }
-
-    class ReportGenerator {
-        +generate(result, search_space) str
-    }
-
-    class TrialResult {
-        +trial_id int
-        +params dict
-        +objective float
-        +rel_l2_error float
-        +elapsed_time float
-        +is_initial bool
-    }
-
-    class BOResult {
-        +trials list~TrialResult~
-        +best_params dict
-        +best_objective float
-        +best_trial_id int
-        +bo_config BOConfig
-    }
-
-    note for BayesianOptimizer "Uses BoTorch internally:\nSingleTaskGP + Standardize\nfit_gpytorch_mll\nLogExpectedImprovement / UCB\noptimize_acqf"
+    BaseOptimizerConfig <|-- BOConfig : extends
+    BaseOptimizationResult <|-- BOResult : extends
+    BaseOptimizer <|-- BayesianOptimizer : extends
+    ObjectiveFunction <|-- PINNObjectiveFunction : extends
+    PINNObjectiveFunction <|-- AccuracyObjective : extends
+    PINNObjectiveFunction <|-- AccuracySpeedObjective : extends
 
     BayesianOptimizer --> SearchSpace : uses
     BayesianOptimizer --> ObjectiveFunction : calls
@@ -593,8 +646,8 @@ search_space = SearchSpace(parameters=[
     HyperParameter(name="epochs_adam",     param_type="int",   low=500,  high=5_000),
 ])
 
-# 4. 目的関数
-objective = ObjectiveFunction(
+# 4. 目的関数（AccuracyObjective または AccuracySpeedObjective を選択）
+objective = AccuracySpeedObjective(
     pde_config=pde_config,
     boundary_data=boundary_data,
     collocation=collocation,
@@ -630,7 +683,7 @@ plot_best_solution_heatmap(result, objective)
 | `torch` | テンソル演算（float64 必須）、GP の入出力形式 |
 | `numpy` | 可視化・評価時の配列操作 |
 | `PINNs_Burgers` | `BurgersPINNSolver`, `NetworkConfig`, `TrainingConfig` 等 |
-| `pydantic` | データクラスの型バリデーション |
+| `pydantic` | `HyperParameter`, `SearchSpace`, `TrialResult` の型バリデーション |
 | `seaborn`, `matplotlib` | 可視化 |
 
 ---
@@ -640,9 +693,11 @@ plot_best_solution_heatmap(result, objective)
 | 項目 | 内容 |
 |------|------|
 | テンソルの dtype | BoTorch は `float64` を要求する。`train_X`, `train_Y`, `bounds` はすべて `torch.float64` で構築する。 |
-| 目的関数の数値安定性 | `rel_l2_error × T` が極めて小さい場合の発散を防ぐため、`max(..., 1e-10)` でクランプする。 |
+| 目的関数の数値安定性 | `rel_l2_error × T` が極めて小さい場合の発散を防ぐため、`max(..., 1e-10)` でクランプする（`AccuracySpeedObjective` のみ）。 |
 | `Standardize` の適用 | `SingleTaskGP(outcome_transform=Standardize(m=1))` で目的関数値を自動標準化し、GP の数値安定性を確保する。 |
 | `LogExpectedImprovement` の `best_f` | `train_Y` の最大値を `best_f` として渡す。`Standardize` 適用後の GP の予測はスケール変換済みのため、`train_Y.max()` を使う。 |
 | `epochs_lbfgs` の扱い | BO 中の学習時間短縮のため `epochs_lbfgs=50` に固定する。最良パラメータを用いた最終評価では元の設定（`epochs_lbfgs=50`）を維持する。 |
 | Sobol 列の再現性 | `draw_sobol_samples` に `seed=config.seed` を渡して Sobol 列の再現性を確保する。 |
 | `optimize_acqf` の `q=1` | 逐次的に 1 点ずつ提案する（バッチ獲得ではない）。 |
+| `train_X` の再構築 | `_run_sequential_search` では `_run_initial_exploration` の戻り値が `list[TrialResult]` のみのため、`sample_sobol(n_initial, seed)` を再呼び出しして `train_X` を再構築する。シードが固定されているため決定論的に同一テンソルが得られる。 |
+| `BOConfig` / `BOResult` のデータ型 | Pydantic ではなく `@dataclass(frozen=True)` を使用。`FrozenInstanceError` で不変性を保証する。 |
