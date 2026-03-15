@@ -42,17 +42,22 @@ $$u(0, x) = -\sin(\pi x), \quad u(t, \pm 1) = 0$$
 │   ├── loss.py         # LossFunction (L_data + L_phys)
 │   ├── solver.py       # ForwardSolver, InverseSolver
 │   └── results.py      # ForwardResult, InverseResult
+├── src/opt_tool/                  # bo / opt_agent 共通基盤
+│   ├── base.py         # BaseOptimizerConfig, BaseOptimizationResult, BaseOptimizer (Template Method)
+│   ├── result.py       # TrialResult (Pydantic)
+│   ├── space.py        # SearchSpace, HyperParameter
+│   ├── objective.py    # ObjectiveFunction ABC
+│   └── report_utils.py # 共通 Markdown ユーティリティ
 ├── src/bo/
-│   ├── objective.py    # ObjectiveFunction ABC, AccuracyObjective, AccuracySpeedObjective
+│   ├── objective.py    # PINNObjectiveFunction, AccuracyObjective, AccuracySpeedObjective
 │   ├── optimizer.py    # BayesianOptimizer (BoTorch GP + acquisition)
-│   ├── result.py       # BOResult, TrialResult, BOConfig
-│   ├── report.py       # ReportGenerator (Markdown レポート)
-│   └── search_space.py # SearchSpace, HyperParameter
+│   ├── result.py       # BOConfig, BOResult
+│   └── report.py       # ReportGenerator (Markdown レポート)
 ├── src/opt_agent/
 │   ├── config.py       # LLMConfig, LLMResult, LLMIterationMeta
-│   ├── optimizer.py    # LLMOptimizer (Facade)
+│   ├── optimizer.py    # LLMOptimizer (Facade, BaseOptimizer 継承)
 │   ├── chain.py        # BaseChain ABC, GeminiChain (LangChain + Gemini)
-│   ├── prompt.py       # PromptBuilder (システム・ヒュープロンプト構築)
+│   ├── prompt.py       # PromptBuilder (システム・ヒューマンプロンプト構築)
 │   ├── proposal.py     # LLMProposal (Pydantic 構造化出力スキーマ)
 │   └── report.py       # IterationReportWriter (逐次 Markdown レポート)
 ├── example/
@@ -61,13 +66,18 @@ $$u(0, x) = -\sin(\pi x), \quad u(t, \pm 1) = 0$$
 │   ├── bo_forward.py           # ベイズ最適化によるハイパーパラメータ探索
 │   └── opt_agent_forward.py    # LLM エージェントによるハイパーパラメータ探索
 ├── tests/
-│   ├── test_algorithm.py    # アルゴリズム実装テスト
-│   ├── test_theory.py       # 理論的性質テスト
-│   └── check_behavior.py    # 振る舞い確認スクリプト（グラフ出力）
+│   ├── test_bo_algorithm.py    # BO アルゴリズム実装テスト (ALG-BO-*)
+│   ├── test_bo_theory.py       # BO 理論的性質テスト (THR-BO-*)
+│   ├── test_llm_algorithm.py   # LLM アルゴリズム実装テスト (ALG-LLM-*)
+│   ├── test_llm_theory.py      # LLM 理論的性質テスト (THR-LLM-*)
+│   ├── check_bo_behavior.py    # BO 振る舞い確認スクリプト（グラフ出力）
+│   └── check_llm_behavior.py   # LLM 振る舞い確認スクリプト（グラフ出力）
 ├── doc/
 │   ├── paper_method.md      # 論文アルゴリズム抽出
-│   ├── imp_design.md        # 実装設計書
-│   └── test_design.md       # テスト設計書
+│   ├── imp_design.md        # PINNs 実装設計書
+│   ├── test_design.md       # PINNs テスト設計書
+│   ├── bo_design.md         # BO モジュール設計書
+│   └── llm_opt_design.md    # LLM 最適化モジュール設計書
 └── data/
     └── burgers_shock.mat    # 参照解データ
 ```
@@ -232,7 +242,8 @@ uv run pytest tests/ -m algorithm
 uv run pytest tests/ -m theory
 
 # 振る舞い確認（グラフ出力・目視確認用）
-uv run python tests/check_behavior.py
+uv run python tests/check_bo_behavior.py
+uv run python tests/check_llm_behavior.py
 ```
 
 ---
