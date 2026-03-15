@@ -210,7 +210,7 @@ def test_thr05_inverse_nu_receives_gradient(
 
     Algorithm 3 Step 1: ν を学習可能変数として宣言。
     """
-    solver = InverseSolver(loss_fn, nu_init=0.05)
+    solver = InverseSolver(loss_fn, nu_init=0.05, device=torch.device("cpu"))
     nu_param = solver._nu_param
 
     with torch.no_grad():
