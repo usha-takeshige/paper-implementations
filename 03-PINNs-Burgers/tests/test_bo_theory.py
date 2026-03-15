@@ -19,7 +19,7 @@ from bo import (
     SearchSpace,
     TrialResult,
 )
-from bo.objective import ObjectiveFunction
+from bo.objective import AccuracySpeedObjective
 from PINNs_Burgers import PDEConfig, TrainingConfig, BoundaryData, CollocationPoints
 
 
@@ -40,6 +40,11 @@ def make_search_space() -> SearchSpace:
 
 class MockObjectiveFunction:
     """Mock: trial_id + 1 as objective, 1/(trial_id+1) as rel_l2_error."""
+
+    @property
+    def name(self) -> str:
+        """Return mock objective name."""
+        return "mock"
 
     def __call__(
         self, params: dict, trial_id: int, is_initial: bool
@@ -180,7 +185,7 @@ def test_thr_bo_05_objective_formula():
     boundary_data = BoundaryData(t=t_tensor, x=x_tensor, u=u_tensor)
     collocation = CollocationPoints(t=t_tensor, x=x_tensor)
 
-    obj_fn = ObjectiveFunction(
+    obj_fn = AccuracySpeedObjective(
         pde_config=pde_config,
         boundary_data=boundary_data,
         collocation=collocation,
@@ -194,6 +199,10 @@ def test_thr_bo_05_objective_formula():
     mock_model = MagicMock()
     u_pred_values = (usol.flatten() + delta).reshape(-1, 1)
     mock_model.return_value = torch.tensor(u_pred_values, dtype=torch.float32)
+    # next(model.parameters()).device must be a real torch.device
+    mock_param = MagicMock()
+    mock_param.device = torch.device("cpu")
+    mock_model.parameters.return_value = iter([mock_param])
 
     mock_forward_result = MagicMock()
     mock_forward_result.model = mock_model
@@ -245,7 +254,7 @@ def test_thr_bo_06_numerical_stability():
     boundary_data = BoundaryData(t=t_tensor, x=x_tensor, u=u_tensor)
     collocation = CollocationPoints(t=t_tensor, x=x_tensor)
 
-    obj_fn = ObjectiveFunction(
+    obj_fn = AccuracySpeedObjective(
         pde_config=pde_config,
         boundary_data=boundary_data,
         collocation=collocation,
@@ -258,6 +267,9 @@ def test_thr_bo_06_numerical_stability():
     mock_model = MagicMock()
     u_pred_values = (usol.flatten() + delta).reshape(-1, 1)
     mock_model.return_value = torch.tensor(u_pred_values, dtype=torch.float32)
+    mock_param = MagicMock()
+    mock_param.device = torch.device("cpu")
+    mock_model.parameters.return_value = iter([mock_param])
 
     mock_forward_result = MagicMock()
     mock_forward_result.model = mock_model

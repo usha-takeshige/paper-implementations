@@ -40,6 +40,11 @@ def make_search_space() -> SearchSpace:
 class MockObjectiveFunction:
     """Test mock: returns deterministic TrialResult without PINN training."""
 
+    @property
+    def name(self) -> str:
+        """Return mock objective name."""
+        return "mock"
+
     def __call__(
         self, params: dict, trial_id: int, is_initial: bool
     ) -> TrialResult:
@@ -75,6 +80,7 @@ def make_bo_result(n_trials: int = 5) -> BOResult:
         best_objective=best.objective,
         best_trial_id=best.trial_id,
         bo_config=cfg,
+        objective_name="mock",
     )
 
 
@@ -352,6 +358,7 @@ def test_alg_bo_23_report_contains_best_trial_id(tmp_path: str) -> None:
     result = BOResult(
         trials=trials, best_params=trials[2].params,
         best_objective=trials[2].objective, best_trial_id=2, bo_config=cfg,
+        objective_name="mock",
     )
     ss = make_search_space()
     reporter = ReportGenerator(output_dir=str(tmp_path))
