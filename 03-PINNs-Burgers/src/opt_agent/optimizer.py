@@ -3,11 +3,11 @@
 from collections.abc import Callable
 from typing import Optional
 
-from bo.objective import ObjectiveFunction
-from bo.result import TrialResult
-from bo.space import SearchSpace
 from opt_agent.chain import BaseChain, GeminiChain
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
+from opt_tool.base import BaseOptimizer
+from opt_tool.result import TrialResult
+from opt_tool.space import SearchSpace
 
 
 _INT_PARAMS = {"n_hidden_layers", "n_neurons", "epochs_adam"}
@@ -19,14 +19,14 @@ IterationCallback = Callable[
 ]
 
 
-class LLMOptimizer:
+class LLMOptimizer(BaseOptimizer):
     """Optimize hyperparameters using an LLM (Gemini via LangChain).
 
     Provides the same interface as BayesianOptimizer for drop-in comparison.
     Three phases:
-    - Phase 1: Sobol quasi-random initial exploration.
-    - Phase 2: LLM-guided sequential search.
-    - Phase 3: Result aggregation.
+    - Phase 1: Sobol quasi-random initial exploration (via BaseOptimizer).
+    - Phase 2: LLM-guided sequential search (_run_sequential_search).
+    - Phase 3: Result aggregation (_build_result).
 
     The LLM chain can be injected for testing (Strategy pattern).
     When chain=None, GeminiChain is built automatically from environment
@@ -36,7 +36,7 @@ class LLMOptimizer:
     def __init__(
         self,
         search_space: SearchSpace,
-        objective: ObjectiveFunction,
+        objective,
         config: LLMConfig = LLMConfig(),
         chain: BaseChain | None = None,
         on_iteration: Optional[IterationCallback] = None,
@@ -65,10 +65,9 @@ class LLMOptimizer:
         ValueError
             If chain is None and GEMINI_API_KEY is not set.
         """
-        self._search_space = search_space
-        self._objective = objective
-        self._config = config
+        super().__init__(search_space, objective, config)
         self._on_iteration = on_iteration
+        self._metas: list[LLMIterationMeta] = []
 
         if chain is not None:
             self._chain: BaseChain = chain
@@ -85,47 +84,9 @@ class LLMOptimizer:
             model_name = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.0-flash")
             self._chain = GeminiChain(model_name=model_name, api_key=api_key)
 
-    def optimize(self) -> LLMResult:
-        """Run the full LLM-based optimization loop.
-
-        Returns
-        -------
-        LLMResult
-            Aggregated result including all trials and LLM metadata.
-        """
-        # Phase 1: Sobol initial exploration
-        initial_trials = self._run_initial_exploration()
-
-        # Phase 2: LLM-guided search
-        all_trials, metas = self._run_llm_guided_search(initial_trials)
-
-        # Phase 3: Aggregate results
-        return self._aggregate_results(all_trials, metas)
-
-    def _run_initial_exploration(self) -> list[TrialResult]:
-        """Phase 1: Sample n_initial points with Sobol and evaluate each.
-
-        Returns
-        -------
-        list[TrialResult]
-            Trial results for the initial Sobol samples.
-        """
-        samples = self._search_space.sample_sobol(
-            n=self._config.n_initial,
-            seed=self._config.seed,
-        )
-        trials: list[TrialResult] = []
-        for i in range(self._config.n_initial):
-            params = self._search_space.from_tensor(samples[i])
-            trial = self._objective(params=params, trial_id=i, is_initial=True)
-            trials.append(trial)
-            self._log_trial(trial, label="initial")
-        return trials
-
-    def _run_llm_guided_search(
-        self,
-        initial_trials: list[TrialResult],
-    ) -> tuple[list[TrialResult], list[LLMIterationMeta]]:
+    def _run_sequential_search(
+        self, initial_trials: list[TrialResult]
+    ) -> list[TrialResult]:
         """Phase 2: Iteratively ask the LLM for proposals and evaluate them.
 
         Out-of-bounds values are clamped to SearchSpace limits.
@@ -139,11 +100,11 @@ class LLMOptimizer:
 
         Returns
         -------
-        tuple[list[TrialResult], list[LLMIterationMeta]]
-            All trials (initial + LLM-guided) and per-iteration LLM metadata.
+        list[TrialResult]
+            All trials (initial + LLM-guided).
         """
         trials: list[TrialResult] = list(initial_trials)
-        metas: list[LLMIterationMeta] = []
+        self._metas = []
 
         for i in range(self._config.n_iterations):
             proposal = self._chain.invoke(
@@ -159,7 +120,8 @@ class LLMOptimizer:
             trial_id = len(trials)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
             trials.append(trial)
-            self._log_trial(trial, label=f"LLM [{i + 1}/{self._config.n_iterations}]")
+            label = f"[LLM    {i + 1:>{len(str(self._config.n_iterations))}}/{self._config.n_iterations}]"
+            self._log_trial(trial, label)
 
             meta = LLMIterationMeta(
                 iteration_id=i,
@@ -167,12 +129,36 @@ class LLMOptimizer:
                 proposed_params=params,
                 reasoning=proposal.reasoning,
             )
-            metas.append(meta)
+            self._metas.append(meta)
 
             if self._on_iteration is not None:
                 self._on_iteration(meta, trial, list(trials))
 
-        return trials, metas
+        return trials
+
+    def _build_result(self, trials: list[TrialResult]) -> LLMResult:
+        """Phase 3: Select the best trial and build LLMResult.
+
+        Parameters
+        ----------
+        trials:
+            All trials from Phase 1 and Phase 2.
+
+        Returns
+        -------
+        LLMResult
+            Final result with best params and all metadata.
+        """
+        best = max(trials, key=lambda t: t.objective)
+        return LLMResult(
+            trials=trials,
+            best_params=best.params,
+            best_objective=best.objective,
+            best_trial_id=best.trial_id,
+            objective_name=self._objective.name,
+            llm_config=self._config,
+            iteration_metas=self._metas,
+        )
 
     def _clamp_params(
         self,
@@ -199,43 +185,3 @@ class LLMOptimizer:
             else:
                 clamped[hp.name] = val
         return clamped
-
-    def _aggregate_results(
-        self,
-        trials: list[TrialResult],
-        metas: list[LLMIterationMeta],
-    ) -> LLMResult:
-        """Phase 3: Select the best trial and build LLMResult.
-
-        Parameters
-        ----------
-        trials:
-            All trials from Phase 1 and Phase 2.
-        metas:
-            LLM metadata from each Phase 2 iteration.
-
-        Returns
-        -------
-        LLMResult
-            Final result with best params and all metadata.
-        """
-        best = max(trials, key=lambda t: t.objective)
-        return LLMResult(
-            trials=trials,
-            best_params=best.params,
-            best_objective=best.objective,
-            best_trial_id=best.trial_id,
-            llm_config=self._config,
-            objective_name=self._objective.name,
-            iteration_metas=metas,
-        )
-
-    @staticmethod
-    def _log_trial(trial: TrialResult, label: str) -> None:
-        """Print a trial result summary to stdout."""
-        print(
-            f"  [{label}] trial={trial.trial_id:>3}  "
-            f"obj={trial.objective:+.4e}  "
-            f"rel_l2={trial.rel_l2_error:.4e}  "
-            f"params={trial.params}"
-        )

@@ -14,11 +14,13 @@ BOResult, TrialResult                          -- store optimization results
 ReportGenerator                                -- generate a markdown report from results
 """
 
-from bo.objective import AccuracyObjective, AccuracySpeedObjective, ObjectiveFunction
+from opt_tool.objective import ObjectiveFunction
+from opt_tool.result import TrialResult          # re-exported for backward compatibility
+from opt_tool.space import HyperParameter, SearchSpace  # re-exported for backward compatibility
+from bo.objective import AccuracyObjective, AccuracySpeedObjective
 from bo.optimizer import BayesianOptimizer
 from bo.report import ReportGenerator
-from bo.result import BOConfig, BOResult, TrialResult
-from bo.space import HyperParameter, SearchSpace
+from bo.result import BOConfig, BOResult
 
 __all__ = [
     "SearchSpace",

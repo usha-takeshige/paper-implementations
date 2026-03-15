@@ -2,8 +2,8 @@
 
 from abc import ABC, abstractmethod
 
-from bo.result import TrialResult
-from bo.space import SearchSpace
+from opt_tool.result import TrialResult
+from opt_tool.space import SearchSpace
 from opt_agent.proposal import LLMProposal
 from opt_agent.prompt import PromptBuilder
 

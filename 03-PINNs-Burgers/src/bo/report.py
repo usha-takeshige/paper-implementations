@@ -4,7 +4,8 @@ import os
 from datetime import datetime, timezone
 
 from bo.result import BOResult
-from bo.space import SearchSpace
+from opt_tool.report_utils import build_convergence_table, build_search_space_table
+from opt_tool.space import SearchSpace
 
 
 class ReportGenerator:
@@ -63,11 +64,7 @@ class ReportGenerator:
             f"| raw_samples       | {cfg.raw_samples}   |",
         ])
 
-        scale_label = {True: "log", False: "linear"}
-        space_rows = "\n".join([
-            f"| {hp.name:<17} | {hp.param_type:<5} | {hp.low:<6} | {hp.high:<6} | {scale_label[hp.log_scale]:<6} |"
-            for hp in search_space.parameters
-        ])
+        space_rows = build_search_space_table(search_space)
 
         # --- Section 2: Best result ---
         best = next(t for t in result.trials if t.trial_id == result.best_trial_id)
@@ -94,15 +91,7 @@ class ReportGenerator:
         all_trials_str = "\n".join(trial_rows)
 
         # --- Section 4: Convergence ---
-        best_so_far: list[tuple[int, float]] = []
-        current_best = float("-inf")
-        for t in result.trials:
-            current_best = max(current_best, t.objective)
-            best_so_far.append((t.trial_id, current_best))
-        convergence_rows = "\n".join([
-            f"| {tid:<5} | {best:.4e}              |"
-            for tid, best in best_so_far
-        ])
+        convergence_rows = build_convergence_table(result.trials)
 
         return f"""# Bayesian Optimization Report
 ## Burgers PINNs Hyperparameter Tuning

@@ -1,7 +1,7 @@
 """Objective functions for Bayesian optimization of PINN hyperparameters."""
 
 import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 import numpy as np
 import torch
@@ -15,18 +15,19 @@ from PINNs_Burgers import (
     TrainingConfig,
 )
 
-from bo.result import TrialResult
+from opt_tool.objective import ObjectiveFunction
+from opt_tool.result import TrialResult
 
 
-class ObjectiveFunction(ABC):
-    """Abstract base class for PINN objective functions.
+class PINNObjectiveFunction(ObjectiveFunction):
+    """Concrete base class for PINN-specific objective functions.
 
     Subclasses implement ``_compute_objective`` to define the scalar value
     derived from ``rel_l2_error`` and ``elapsed_time`` after PINN training.
-    ``BayesianOptimizer`` maximizes the returned objective value.
+    Optimizers maximize the returned objective value.
 
     Common PINN evaluation logic (training, inference, error computation)
-    is provided by ``__call__`` in this base class.
+    is provided by ``__call__`` in this class.
     """
 
     def __init__(
@@ -68,12 +69,6 @@ class ObjectiveFunction(ABC):
         self._usol = usol
         self._base_training_config = base_training_config
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Human-readable name of the objective function."""
-        ...
-
     @abstractmethod
     def _compute_objective(self, rel_l2_error: float, elapsed_time: float) -> float:
         """Compute the scalar objective from evaluation metrics.
@@ -88,7 +83,7 @@ class ObjectiveFunction(ABC):
         Returns
         -------
         float
-            Scalar objective value. Higher is better (BayesianOptimizer maximizes).
+            Scalar objective value. Higher is better (optimizer maximizes).
         """
         ...
 
@@ -164,7 +159,7 @@ class ObjectiveFunction(ABC):
         )
 
 
-class AccuracyObjective(ObjectiveFunction):
+class AccuracyObjective(PINNObjectiveFunction):
     """Objective that maximizes accuracy only.
 
     objective = -rel_l2_error
@@ -183,7 +178,7 @@ class AccuracyObjective(ObjectiveFunction):
         return -rel_l2_error
 
 
-class AccuracySpeedObjective(ObjectiveFunction):
+class AccuracySpeedObjective(PINNObjectiveFunction):
     """Objective that maximizes both accuracy and training speed.
 
     objective = 1 / max(rel_l2_error × elapsed_time, 1e-10)
