@@ -1,29 +1,25 @@
-"""Example: Bayesian optimization for PINN hyperparameter tuning.
+"""Example: LLM-based hyperparameter optimization for PINN training.
 
-Uses BoTorch-based Gaussian process Bayesian optimization to search for
-the best neural network hyperparameters for BurgersPINNSolver.solve_forward().
+Uses LangChain + Gemini to propose hyperparameter configurations for
+BurgersPINNSolver.solve_forward(), then evaluates each proposal.
 
-Shares the same data pipeline as forward_problem.py.
+Uses the same data pipeline and search space as bo_forward.py for a
+fair comparison between Bayesian optimization and LLM-based optimization.
 
-Objective:  AccuracyObjective  (maximize  -rel_l2_error)
-            Switch to AccuracySpeedObjective to also penalize training time.
-
-Search space:
-    n_hidden_layers : int   [2, 8]     linear
-    n_neurons       : int   [10, 100]  linear
-    lr              : float [1e-4, 1e-2]  log
-    epochs_adam     : int   [500, 5000]   linear
+Requires:
+    GEMINI_API_KEY=<your_api_key>  in a .env file (or environment variable)
+    GEMINI_MODEL_NAME=gemini-2.0-flash  (optional, defaults to gemini-2.0-flash)
 
 Usage:
     cd 03-PINNs-Burgers
-    uv run python example/bo_forward.py
+    uv run python example/opt_agent_forward.py
 
-Output (example/output/):
-    bo_convergence.png           -- cumulative best objective vs trial
-    bo_objective_scatter.png     -- all trial objectives colored by type
-    bo_parallel_coords.png       -- parallel coordinates of hyperparameters
-    bo_best_solution_heatmap.png -- predicted vs reference solution heatmap
-    bo_report.md                 -- markdown summary report
+Output (example/opt_agent_output/):
+    opt_agent_report.md                 -- running report (updated each iteration)
+    opt_agent_convergence.png           -- cumulative best objective vs trial
+    opt_agent_objective_scatter.png     -- all trial objectives colored by type
+    opt_agent_parallel_coords.png       -- parallel coordinates of hyperparameters
+    opt_agent_best_solution_heatmap.png -- predicted vs reference solution heatmap
 """
 
 import math
@@ -48,15 +44,13 @@ from forward_problem import (
 from PINNs_Burgers import NetworkConfig, PDEConfig, TrainingConfig, BurgersPINNSolver
 from bo import (
     AccuracyObjective,
-    BOConfig,
-    BayesianOptimizer,
-    BOResult,
     HyperParameter,
-    ReportGenerator,
     SearchSpace,
+    TrialResult,
 )
+from opt_agent import IterationReportWriter, LLMConfig, LLMIterationMeta, LLMOptimizer, LLMResult
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "bo_output")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "opt_agent_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 NU_TRUE = 0.01 / math.pi  # kinematic viscosity (Paper Section 5.1)
@@ -67,8 +61,8 @@ NU_TRUE = 0.01 / math.pi  # kinematic viscosity (Paper Section 5.1)
 # ---------------------------------------------------------------------------
 
 
-def plot_convergence(result: BOResult) -> None:
-    """Plot cumulative best objective value vs trial number."""
+def plot_convergence(result: LLMResult) -> None:
+    """BHV-LLM-01: Plot cumulative best objective vs trial number."""
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(8, 4))
 
@@ -79,60 +73,58 @@ def plot_convergence(result: BOResult) -> None:
         best_so_far.append(current_best)
 
     trial_ids = list(range(len(result.trials)))
-    n_initial = result.bo_config.n_initial
+    n_initial = result.llm_config.n_initial
     ax.axvline(x=n_initial - 0.5, color="gray", linestyle="--", alpha=0.6,
-               label="Sobol / BO boundary")
+               label="Sobol / LLM boundary")
     sns.lineplot(x=trial_ids, y=best_so_far, ax=ax, linewidth=1.5,
                  marker="o", markersize=4)
     ax.set_xlabel("Trial")
     ax.set_ylabel("Best Objective So Far")
     ax.set_title(
-        "BO Convergence: Cumulative Best Objective vs Trial\n"
-        "Curve should rise monotonically and plateau as BO converges."
+        "LLM Optimizer Convergence: Cumulative Best Objective vs Trial\n"
+        "Curve should rise and plateau as LLM learns from history."
     )
     ax.legend()
-    path = os.path.join(OUTPUT_DIR, "bo_convergence.png")
+    path = os.path.join(OUTPUT_DIR, "opt_agent_convergence.png")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
     print(f"  Saved: {path}")
 
 
-def plot_objective_scatter(result: BOResult) -> None:
-    """Scatter plot of objective values for all trials, colored by type."""
+def plot_objective_scatter(result: LLMResult) -> None:
+    """Plot objective values for all trials, colored by type."""
     sns.set_theme(style="whitegrid")
     fig, ax = plt.subplots(figsize=(8, 4))
 
     initial_ids = [t.trial_id for t in result.trials if t.is_initial]
     initial_obj = [t.objective for t in result.trials if t.is_initial]
-    bo_ids = [t.trial_id for t in result.trials if not t.is_initial]
-    bo_obj = [t.objective for t in result.trials if not t.is_initial]
+    llm_ids = [t.trial_id for t in result.trials if not t.is_initial]
+    llm_obj = [t.objective for t in result.trials if not t.is_initial]
 
-    ax.scatter(initial_ids, initial_obj, label="Sobol initial", alpha=0.8,
-               marker="o", s=60)
-    ax.scatter(bo_ids, bo_obj, label="BO proposal", alpha=0.8, marker="^", s=60)
+    ax.scatter(initial_ids, initial_obj, label="Sobol initial", alpha=0.8, marker="o", s=60)
+    ax.scatter(llm_ids, llm_obj, label="LLM proposal", alpha=0.8, marker="^", s=60)
     ax.axhline(y=result.best_objective, color="red", linestyle="--", alpha=0.7,
                label=f"Best = {result.best_objective:.4e}")
     ax.set_xlabel("Trial")
     ax.set_ylabel(f"Objective  ({result.objective_name})")
     ax.set_title(
-        "BO Objective Values: Sobol Initial vs BO Proposals\n"
-        "BO proposals should tend toward higher objective values."
+        "LLM Optimizer: Objective Values — Sobol Initial vs LLM Proposals\n"
+        "LLM proposals should tend toward higher objective values."
     )
     ax.legend()
-    path = os.path.join(OUTPUT_DIR, "bo_objective_scatter.png")
+    path = os.path.join(OUTPUT_DIR, "opt_agent_objective_scatter.png")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
     print(f"  Saved: {path}")
 
 
-def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
+def plot_parallel_coords(result: LLMResult, search_space: SearchSpace) -> None:
     """Parallel coordinates plot of hyperparameter values vs objective."""
     sns.set_theme(style="whitegrid")
     param_names = [hp.name for hp in search_space.parameters]
 
-    # Normalize param values to [0,1] for display
     rows = []
     for t in result.trials:
         x = search_space.to_tensor(t.params).squeeze(0).tolist()
@@ -140,8 +132,6 @@ def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
 
     cols = param_names + ["objective"]
     data = np.array(rows)
-
-    # Normalize each column to [0, 1] for display
     data_norm = (data - data.min(axis=0)) / (data.max(axis=0) - data.min(axis=0) + 1e-12)
 
     fig, axes = plt.subplots(1, len(cols) - 1, figsize=(12, 5), sharey=False)
@@ -151,8 +141,7 @@ def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
     for i in range(len(cols) - 1):
         for j, row in enumerate(data_norm):
             color = cmap(obj_norm[j])
-            axes[i].plot([0, 1], [row[i], row[i + 1]], color=color, alpha=0.6,
-                         linewidth=0.8)
+            axes[i].plot([0, 1], [row[i], row[i + 1]], color=color, alpha=0.6, linewidth=0.8)
         axes[i].set_xlim(0, 1)
         axes[i].set_xticks([0, 1])
         axes[i].set_xticklabels([cols[i], cols[i + 1]], rotation=15, fontsize=8)
@@ -167,7 +156,7 @@ def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
         "Parallel Coordinates: Hyperparameter Values vs Objective\n"
         "Brighter lines correspond to higher objective values."
     )
-    path = os.path.join(OUTPUT_DIR, "bo_parallel_coords.png")
+    path = os.path.join(OUTPUT_DIR, "opt_agent_parallel_coords.png")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
@@ -175,8 +164,7 @@ def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
 
 
 def plot_best_solution_heatmap(
-    result: BOResult,
-    search_space: SearchSpace,
+    result: LLMResult,
     pde_config: PDEConfig,
     base_training_config: TrainingConfig,
     x_mesh: np.ndarray,
@@ -186,12 +174,7 @@ def plot_best_solution_heatmap(
     x_grid: np.ndarray,
 ) -> None:
     """Re-train PINN with best hyperparameters and plot predicted vs reference."""
-    from forward_problem import sample_boundary_data, sample_collocation_points
-
-    # Reload boundary and collocation data for final evaluation
-    boundary_data = sample_boundary_data(
-        x_grid, t_grid, usol, n_u=base_training_config.n_u
-    )
+    boundary_data = sample_boundary_data(x_grid, t_grid, usol, n_u=base_training_config.n_u)
     collocation = sample_collocation_points(x_grid, t_grid, n_f=base_training_config.n_f)
 
     best = result.best_params
@@ -231,7 +214,7 @@ def plot_best_solution_heatmap(
     for ax, data, label in zip(
         axes,
         [u_pred, usol],
-        ["Best PINN Prediction u_theta(t, x)", "Reference u_ref(t, x)"],
+        ["Best LLM Prediction u_theta(t, x)", "Reference u_ref(t, x)"],
     ):
         im = ax.pcolormesh(
             t_grid.ravel(), x_grid.ravel(), data,
@@ -243,10 +226,10 @@ def plot_best_solution_heatmap(
         ax.set_title(label)
 
     fig.suptitle(
-        f"BO Best Solution: Predicted vs Reference  (rel L2 = {rel_l2:.4e})\n"
+        f"LLM Best Solution: Predicted vs Reference  (rel L2 = {rel_l2:.4e})\n"
         "Left panel should match right panel closely."
     )
-    path = os.path.join(OUTPUT_DIR, "bo_best_solution_heatmap.png")
+    path = os.path.join(OUTPUT_DIR, "opt_agent_best_solution_heatmap.png")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
@@ -259,9 +242,9 @@ def plot_best_solution_heatmap(
 
 
 def main() -> None:
-    """Run Bayesian optimization for PINN hyperparameter tuning."""
+    """Run LLM-based hyperparameter optimization for PINN training."""
     torch.manual_seed(42)
-    print("=== Bayesian Optimization: PINN Hyperparameter Tuning ===")
+    print("=== LLM-based Optimization: PINN Hyperparameter Tuning ===")
     print(f"  nu = {NU_TRUE:.6f}  (0.01 / pi)\n")
 
     # 1. Load reference data (shared with forward_problem.py)
@@ -269,7 +252,7 @@ def main() -> None:
     x_grid, t_grid, X_mesh, T_mesh, usol = load_reference_data()
     print(f"  x: {x_grid.shape}, t: {t_grid.shape}, usol: {usol.shape}")
 
-    # 2. Fixed configuration
+    # 2. Fixed configuration (same as bo_forward.py for fair comparison)
     pde_config = PDEConfig(
         nu=NU_TRUE, x_min=-1.0, x_max=1.0, t_min=0.0, t_max=1.0
     )
@@ -277,11 +260,11 @@ def main() -> None:
         n_u=100, n_f=10_000, lr=1e-3, epochs_adam=2_000, epochs_lbfgs=50
     )
 
-    # 3. Sample training data (fixed across all BO trials for fair comparison)
+    # 3. Sample training data (fixed across all trials for fair comparison)
     boundary_data = sample_boundary_data(x_grid, t_grid, usol, n_u=100)
     collocation = sample_collocation_points(x_grid, t_grid, n_f=10_000)
 
-    # 4. Define search space
+    # 4. Define search space (identical to bo_forward.py)
     search_space = SearchSpace(parameters=[
         HyperParameter(name="n_hidden_layers", param_type="int",   low=2,    high=8),
         HyperParameter(name="n_neurons",       param_type="int",   low=10,   high=100),
@@ -289,7 +272,7 @@ def main() -> None:
         HyperParameter(name="epochs_adam",     param_type="int",   low=500,  high=5_000),
     ])
 
-    # 5. Define objective function
+    # 5. Define objective function (identical to bo_forward.py)
     objective = AccuracyObjective(
         pde_config=pde_config,
         boundary_data=boundary_data,
@@ -300,25 +283,44 @@ def main() -> None:
         base_training_config=base_training_config,
     )
 
-    # 6. Run Bayesian optimization
-    bo_config = BOConfig(n_initial=5, n_iterations=20, acquisition="EI", seed=42)
+    # 6. Run LLM-based optimization with per-iteration report
+    llm_config = LLMConfig(n_initial=5, n_iterations=20, seed=42)
     print(
-        f"\nStarting BO: n_initial={bo_config.n_initial}, "
-        f"n_iterations={bo_config.n_iterations}, "
-        f"acquisition={bo_config.acquisition}\n"
+        f"\nStarting LLM optimization: n_initial={llm_config.n_initial}, "
+        f"n_iterations={llm_config.n_iterations}\n"
     )
-    optimizer = BayesianOptimizer(search_space, objective, bo_config)
+
+    # Initialize running report (header + config written immediately)
+    writer = IterationReportWriter(
+        output_dir=OUTPUT_DIR,
+        search_space=search_space,
+        llm_config=llm_config,
+        objective_name=objective.name,
+    )
+
+    def on_iteration(
+        meta: LLMIterationMeta,
+        trial: TrialResult,
+        all_trials: list[TrialResult],
+    ) -> None:
+        """Write Phase 1 on first call, then append each LLM iteration."""
+        if meta.iteration_id == 0:
+            initial = [t for t in all_trials if t.is_initial]
+            writer.write_initial_trials(initial)
+        writer.append_iteration(meta, trial, all_trials)
+
+    optimizer = LLMOptimizer(
+        search_space, objective, llm_config, on_iteration=on_iteration
+    )
     result = optimizer.optimize()
 
     print(f"\nBest trial: #{result.best_trial_id}")
     print(f"  Best objective: {result.best_objective:.4e}")
     print(f"  Best params:    {result.best_params}")
 
-    # 7. Generate markdown report
-    print("\nGenerating report ...")
-    reporter = ReportGenerator(output_dir=OUTPUT_DIR)
-    report_path = reporter.generate(result, search_space)
-    print(f"  Report saved: {report_path}")
+    # Finalize report with best-result summary and convergence table
+    report_path = writer.finalize(result)
+    print(f"\n  Report saved: {report_path}")
 
     # 8. Visualizations
     print("\nGenerating plots ...")
@@ -326,7 +328,7 @@ def main() -> None:
     plot_objective_scatter(result)
     plot_parallel_coords(result, search_space)
     plot_best_solution_heatmap(
-        result, search_space, pde_config, base_training_config,
+        result, pde_config, base_training_config,
         X_mesh, T_mesh, usol, t_grid, x_grid,
     )
 
