@@ -1,7 +1,7 @@
 """Prompt builder for LLM-guided hyperparameter optimization."""
 
-from bo.result import TrialResult
-from bo.space import SearchSpace
+from opt_tool.result import TrialResult
+from opt_tool.space import SearchSpace
 
 
 class PromptBuilder:

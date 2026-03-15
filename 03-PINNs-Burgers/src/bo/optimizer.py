@@ -8,16 +8,17 @@ from botorch.models.transforms.outcome import Standardize
 from botorch.optim import optimize_acqf
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from bo.objective import ObjectiveFunction
-from bo.result import BOConfig, BOResult, TrialResult
-from bo.space import SearchSpace
+from bo.result import BOConfig, BOResult
+from opt_tool.base import BaseOptimizer
+from opt_tool.result import TrialResult
+from opt_tool.space import SearchSpace
 
 
-class BayesianOptimizer:
+class BayesianOptimizer(BaseOptimizer):
     """Bayesian optimizer using BoTorch's SingleTaskGP and optimize_acqf.
 
     Implements a sequential Bayesian optimization loop:
-    Phase 1 — Sobol initial sampling (n_initial evaluations).
+    Phase 1 — Sobol initial sampling (n_initial evaluations) via BaseOptimizer.
     Phase 2 — GP-guided search: fit SingleTaskGP, optimize acquisition
               function, evaluate next candidate, repeat for n_iterations.
     Phase 3 — Aggregate all trials into BOResult.
@@ -32,7 +33,7 @@ class BayesianOptimizer:
     def __init__(
         self,
         search_space: SearchSpace,
-        objective: ObjectiveFunction,
+        objective,
         config: BOConfig,
     ) -> None:
         """Initialize BayesianOptimizer.
@@ -46,83 +47,37 @@ class BayesianOptimizer:
         config:
             BO configuration (n_initial, n_iterations, acquisition, etc.).
         """
-        self._search_space = search_space
-        self._objective = objective
-        self._config = config
+        super().__init__(search_space, objective, config)
 
-    def _log_trial(self, trial: TrialResult, label: str) -> None:
-        """Print a single trial result to stdout.
+    def _run_sequential_search(
+        self, initial_trials: list[TrialResult]
+    ) -> list[TrialResult]:
+        """Phase 2: GP-guided sequential search.
+
+        Rebuilds train_X from the same Sobol seed used in Phase 1 (deterministic).
+        Fits a SingleTaskGP at each iteration, optimizes the acquisition function,
+        evaluates the next candidate, and appends to trials.
 
         Parameters
         ----------
-        trial:
-            The trial result to log.
-        label:
-            Short label displayed at the beginning of the line (e.g. "[Initial 1/5]").
-        """
-        params_str = "  ".join(
-            f"{k}={v:.2e}" if isinstance(v, float) else f"{k}={v}"
-            for k, v in trial.params.items()
-        )
-        print(
-            f"{label}  {params_str}"
-            f"  | L2={trial.rel_l2_error:.4e}"
-            f"  | Time={trial.elapsed_time:.2f}s"
-            f"  | Obj={trial.objective:.4e}"
-        )
-
-    def optimize(self) -> BOResult:
-        """Run the full Bayesian optimization loop and return BOResult.
-
-        Phase 1 — Initial Sobol sampling (config.n_initial points):
-          1. Draw n_initial quasi-random points with SearchSpace.sample_sobol.
-          2. Convert each to a parameter dict with SearchSpace.from_tensor.
-          3. Evaluate ObjectiveFunction and record TrialResult.
-          4. Build initial train_X (n_initial, dim) and train_Y (n_initial, 1).
-
-        Phase 2 — GP-based sequential search (config.n_iterations rounds):
-          5. Fit SingleTaskGP(train_X, train_Y, Standardize(m=1)).
-          6. Fit GP kernel parameters with fit_gpytorch_mll.
-          7. Build LogExpectedImprovement or UpperConfidenceBound.
-          8. Optimize acquisition function with optimize_acqf to get x_next.
-          9. Evaluate ObjectiveFunction at x_next and record TrialResult.
-          10. Append x_next to train_X and objective to train_Y.
-
-        Phase 3 — Collect results:
-          11. Select the trial with maximum objective.
-          12. Return BOResult.
+        initial_trials:
+            Trial results from Phase 1 (Sobol initial exploration).
 
         Returns
         -------
-        BOResult
-            Full optimization result with all trials and best configuration.
+        list[TrialResult]
+            All trials including initial_trials and newly evaluated BO points.
         """
-        trials: list[TrialResult] = []
+        trials: list[TrialResult] = list(initial_trials)
 
-        # ------------------------------------------------------------------ #
-        # Phase 1: Initial Sobol sampling
-        # ------------------------------------------------------------------ #
-        sobol_points = self._search_space.sample_sobol(
+        # Reconstruct train_X using the same Sobol seed; draw_sobol_samples is deterministic
+        train_X = self._search_space.sample_sobol(
             n=self._config.n_initial, seed=self._config.seed
-        )  # (n_initial, dim)
-
-        n_init_width = len(str(self._config.n_initial))
-        for i in range(self._config.n_initial):
-            x_i = sobol_points[i]  # (dim,)
-            params = self._search_space.from_tensor(x_i)
-            trial = self._objective(params=params, trial_id=i, is_initial=True)
-            trials.append(trial)
-            label = f"[Initial {i + 1:>{n_init_width}}/{self._config.n_initial}]"
-            self._log_trial(trial, label)
-
-        train_X = sobol_points.clone().to(torch.float64)  # (n_initial, dim)
+        ).to(torch.float64)  # (n_initial, dim)
         train_Y = torch.tensor(
-            [[t.objective] for t in trials], dtype=torch.float64
+            [[t.objective] for t in initial_trials], dtype=torch.float64
         )  # (n_initial, 1)
 
-        # ------------------------------------------------------------------ #
-        # Phase 2: GP-based sequential search
-        # ------------------------------------------------------------------ #
         n_iter_width = len(str(self._config.n_iterations))
         for iteration in range(self._config.n_iterations):
             trial_id = self._config.n_initial + iteration
@@ -165,15 +120,27 @@ class BayesianOptimizer:
                 dim=0,
             )
 
-        # ------------------------------------------------------------------ #
-        # Phase 3: Aggregate results
-        # ------------------------------------------------------------------ #
+        return trials
+
+    def _build_result(self, trials: list[TrialResult]) -> BOResult:
+        """Phase 3: Select the best trial and build BOResult.
+
+        Parameters
+        ----------
+        trials:
+            All trials from Phase 1 and Phase 2.
+
+        Returns
+        -------
+        BOResult
+            Full optimization result with all trials and best configuration.
+        """
         best_trial = max(trials, key=lambda t: t.objective)
         return BOResult(
             trials=trials,
             best_params=best_trial.params,
             best_objective=best_trial.objective,
             best_trial_id=best_trial.trial_id,
-            bo_config=self._config,
             objective_name=self._objective.name,
+            bo_config=self._config,
         )

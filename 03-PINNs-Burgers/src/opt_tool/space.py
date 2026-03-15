@@ -1,11 +1,11 @@
-"""Search space definition for Bayesian optimization."""
+"""Search space definition for hyperparameter optimization."""
 
 import math
+from typing import Literal
 
 import torch
 from botorch.utils.sampling import draw_sobol_samples
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal
 
 
 class HyperParameter(BaseModel):
@@ -29,7 +29,7 @@ class HyperParameter(BaseModel):
 
 
 class SearchSpace(BaseModel):
-    """Search space for hyperparameter Bayesian optimization.
+    """Search space for hyperparameter optimization.
 
     Manages the set of hyperparameters to tune and handles normalized
     conversion to/from the [0, 1]^d unit hypercube that BoTorch expects.

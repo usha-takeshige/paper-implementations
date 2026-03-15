@@ -326,6 +326,7 @@ def test_prompt_builder_human_contains_best() -> None:
 def test_optimizer_raises_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """ALG-LLM-13: LLMOptimizer raises ValueError when GEMINI_API_KEY is unset."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda **kwargs: None)
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
         LLMOptimizer(
             search_space=make_search_space(),

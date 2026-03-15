@@ -3,9 +3,10 @@
 import os
 from datetime import datetime, timezone
 
-from bo.result import TrialResult
-from bo.space import SearchSpace
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
+from opt_tool.report_utils import build_convergence_table, build_search_space_table
+from opt_tool.result import TrialResult
+from opt_tool.space import SearchSpace
 
 
 class IterationReportWriter:
@@ -57,11 +58,7 @@ class IterationReportWriter:
         self._path = os.path.join(output_dir, "opt_agent_report.md")
         self._n_iterations = llm_config.n_iterations
 
-        scale_label = {True: "log", False: "linear"}
-        space_rows = "\n".join([
-            f"| {hp.name:<17} | {hp.param_type:<5} | {hp.low:<6} | {hp.high:<6} | {scale_label[hp.log_scale]:<6} |"
-            for hp in search_space.parameters
-        ])
+        space_rows = build_search_space_table(search_space)
         now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         header = f"""# LLM-based Hyperparameter Optimization Report
@@ -209,15 +206,7 @@ objective = {best_initial.objective:.4e}, rel_l2 = {best_initial.rel_l2_error:.4
             for name, val in result.best_params.items()
         ])
 
-        best_so_far_list: list[tuple[int, float]] = []
-        current_best = float("-inf")
-        for t in result.trials:
-            current_best = max(current_best, t.objective)
-            best_so_far_list.append((t.trial_id, current_best))
-        convergence_rows = "\n".join([
-            f"| {tid:<5} | {b:.4e}              |"
-            for tid, b in best_so_far_list
-        ])
+        convergence_rows = build_convergence_table(result.trials)
 
         footer = f"""## 4. Final Best Result
 
