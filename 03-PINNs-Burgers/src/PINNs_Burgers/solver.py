@@ -18,13 +18,15 @@ class BaseSolver(ABC):
     サブクラスは _get_trainable_params，_get_nu，_after_step をオーバーライドする。
     """
 
-    def __init__(self, loss_fn: LossFunction) -> None:
+    def __init__(self, loss_fn: LossFunction, device: torch.device) -> None:
         """初期化する。
 
         Args:
             loss_fn: 損失計算オブジェクト。
+            device: 学習に使用するデバイス（cpu / mps）。
         """
         self.loss_fn = loss_fn
+        self._device = device
 
     def train(
         self,
@@ -44,6 +46,16 @@ class BaseSolver(ABC):
         Returns:
             エポックごとの総損失値の履歴。
         """
+        bd = BoundaryData(
+            t=boundary_data.t.to(self._device),
+            x=boundary_data.x.to(self._device),
+            u=boundary_data.u.to(self._device),
+        )
+        col = CollocationPoints(
+            t=collocation.t.to(self._device),
+            x=collocation.x.to(self._device),
+        )
+
         params = self._get_trainable_params(model)
         optimizer = torch.optim.Adam(params, lr=config.lr)
         loss_history: list[float] = []
@@ -51,7 +63,7 @@ class BaseSolver(ABC):
         for _ in range(config.epochs_adam):
             optimizer.zero_grad()
             nu = self._get_nu()
-            L_total, _, _ = self.loss_fn.compute(model, boundary_data, collocation, nu)
+            L_total, _, _ = self.loss_fn.compute(model, bd, col, nu)
             L_total.backward()
             optimizer.step()
             loss_history.append(L_total.item())
@@ -81,15 +93,18 @@ class ForwardSolver(BaseSolver):
     Algorithm 2 に対応。
     """
 
-    def __init__(self, loss_fn: LossFunction, pde_config: PDEConfig) -> None:
+    def __init__(
+        self, loss_fn: LossFunction, pde_config: PDEConfig, device: torch.device
+    ) -> None:
         """初期化する。
 
         Args:
             loss_fn: 損失計算オブジェクト。
             pde_config: 問題設定（ν を固定値として使用）。
+            device: 学習に使用するデバイス（cpu / mps）。
         """
-        super().__init__(loss_fn)
-        self._nu_value = torch.tensor(pde_config.nu, dtype=torch.float32)
+        super().__init__(loss_fn, device)
+        self._nu_value = torch.tensor(pde_config.nu, dtype=torch.float32, device=device)
 
     def train(
         self,
@@ -113,6 +128,15 @@ class ForwardSolver(BaseSolver):
         loss_history = super().train(model, boundary_data, collocation, config)
 
         # Phase 2: L-BFGS（Algorithm 2 Step 2 Phase 2）
+        bd = BoundaryData(
+            t=boundary_data.t.to(self._device),
+            x=boundary_data.x.to(self._device),
+            u=boundary_data.u.to(self._device),
+        )
+        col = CollocationPoints(
+            t=collocation.t.to(self._device),
+            x=collocation.x.to(self._device),
+        )
         params = self._get_trainable_params(model)
         optimizer = torch.optim.LBFGS(
             params,
@@ -125,9 +149,7 @@ class ForwardSolver(BaseSolver):
             """L-BFGS が要求するクロージャ（損失を再計算して返す）。"""
             optimizer.zero_grad()
             nu = self._get_nu()
-            L_total, _, _ = self.loss_fn.compute(
-                model, boundary_data, collocation, nu
-            )
+            L_total, _, _ = self.loss_fn.compute(model, bd, col, nu)
             L_total.backward()
             loss_history.append(L_total.item())
             return L_total
@@ -155,17 +177,18 @@ class InverseSolver(BaseSolver):
     Algorithm 3 に対応。ν を学習可能パラメータとして θ と同時に最適化する。
     """
 
-    def __init__(self, loss_fn: LossFunction, nu_init: float) -> None:
+    def __init__(self, loss_fn: LossFunction, nu_init: float, device: torch.device) -> None:
         """初期化する。
 
         Args:
             loss_fn: 損失計算オブジェクト。
             nu_init: ν の初期値（学習可能パラメータとして扱う）。
+            device: 学習に使用するデバイス（cpu / mps）。
         """
-        super().__init__(loss_fn)
+        super().__init__(loss_fn, device)
         # ν を学習可能パラメータとして宣言（式(11) 対応）
         self._nu_param = nn.Parameter(
-            torch.tensor(nu_init, dtype=torch.float32)
+            torch.tensor(nu_init, dtype=torch.float32, device=device)
         )
         self._nu_history: list[float] = []
 

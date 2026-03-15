@@ -42,9 +42,16 @@ $$u(0, x) = -\sin(\pi x), \quad u(t, \pm 1) = 0$$
 │   ├── loss.py         # LossFunction (L_data + L_phys)
 │   ├── solver.py       # ForwardSolver, InverseSolver
 │   └── results.py      # ForwardResult, InverseResult
+├── src/bo/
+│   ├── objective.py    # ObjectiveFunction ABC, AccuracyObjective, AccuracySpeedObjective
+│   ├── optimizer.py    # BayesianOptimizer (BoTorch GP + acquisition)
+│   ├── result.py       # BOResult, TrialResult, BOConfig
+│   ├── report.py       # ReportGenerator (Markdown レポート)
+│   └── search_space.py # SearchSpace, HyperParameter
 ├── example/
 │   ├── forward_problem.py   # 順問題の使用例
-│   └── inverse_problem.py   # 逆問題の使用例
+│   ├── inverse_problem.py   # 逆問題の使用例
+│   └── bo_forward.py        # ベイズ最適化によるハイパーパラメータ探索
 ├── tests/
 │   ├── test_algorithm.py    # アルゴリズム実装テスト
 │   ├── test_theory.py       # 理論的性質テスト
@@ -66,7 +73,7 @@ cd 03-PINNs-Burgers
 uv sync
 ```
 
-**依存ライブラリ**: `torch`, `numpy`, `scipy`, `matplotlib`, `seaborn`, `pydantic`
+**依存ライブラリ**: `torch`, `numpy`, `scipy`, `matplotlib`, `seaborn`, `pydantic`, `botorch`
 
 ---
 
@@ -102,6 +109,44 @@ uv run python example/inverse_problem.py
 |---------|------|
 | `inverse_loss_curve.png` | 学習損失の推移 |
 | `inverse_nu_trajectory.png` | $\nu$ の推定軌跡と真値との比較 |
+
+### ベイズ最適化によるハイパーパラメータ探索
+
+BoTorch ベースのガウス過程 BO で、順問題に最適なネットワーク構造・学習率を自動探索する。
+
+```bash
+uv run python example/bo_forward.py
+```
+
+出力先: `example/bo_output/`
+
+| ファイル | 内容 |
+|---------|------|
+| `bo_convergence.png` | 累積ベスト目的関数値の推移 |
+| `bo_objective_scatter.png` | 各試行の目的関数値（Sobol 初期 vs BO 提案） |
+| `bo_parallel_coords.png` | ハイパーパラメータの並行座標プロット |
+| `bo_best_solution_heatmap.png` | 最良パラメータによる予測解 vs 参照解 |
+| `bo_report.md` | Markdown サマリーレポート |
+
+**探索空間**
+
+| パラメータ | 範囲 | スケール |
+|-----------|------|---------|
+| `n_hidden_layers` | 2 〜 8 | linear |
+| `n_neurons` | 10 〜 100 | linear |
+| `lr` | 1e-4 〜 1e-2 | log |
+| `epochs_adam` | 500 〜 5000 | linear |
+
+**目的関数の切り替え**（Strategy パターン）
+
+| クラス | 目的関数 | 用途 |
+|--------|---------|------|
+| `AccuracyObjective` | $-\text{rel\_l2\_error}$ | 精度のみ最大化 |
+| `AccuracySpeedObjective` | $1 / (\text{rel\_l2\_error} \times t)$ | 精度と学習速度を同時に最大化 |
+
+`bo_forward.py` の `objective = AccuracyObjective(...)` を `AccuracySpeedObjective(...)` に変更するだけで切り替えられる。
+
+---
 
 ### Python API
 

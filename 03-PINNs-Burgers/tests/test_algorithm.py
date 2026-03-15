@@ -218,7 +218,7 @@ def test_alg08_forward_solver_params_no_nu(
     loss_fn: LossFunction, pde_config: PDEConfig, pinn: PINN
 ) -> None:
     """ALG-08: ForwardSolver の学習パラメータに ν テンソルが含まれないこと。"""
-    solver = ForwardSolver(loss_fn, pde_config)
+    solver = ForwardSolver(loss_fn, pde_config, device=torch.device("cpu"))
     params = solver._get_trainable_params(pinn)
     nu_value = pde_config.nu
 
@@ -243,7 +243,7 @@ def test_alg09_inverse_solver_params_includes_nu(
 ) -> None:
     """ALG-09: InverseSolver の学習パラメータに requires_grad=True の ν が含まれること。"""
     nu_init = 0.05
-    solver = InverseSolver(loss_fn, nu_init)
+    solver = InverseSolver(loss_fn, nu_init, device=torch.device("cpu"))
     params = solver._get_trainable_params(pinn)
 
     nu_params = [
