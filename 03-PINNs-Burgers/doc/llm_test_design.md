@@ -25,10 +25,10 @@
 | ALG-LLM-06 | `LLMResult` | frozen により変更不可 | `result.best_objective = 99.0` を代入 | `FrozenInstanceError` を送出 |
 | ALG-LLM-07 | `LLMProposal` | 正しい型の値でインスタンス化できる | 有効な `analysis_report`, `proposed_params`, `reasoning` を渡す | インスタンス化成功、各フィールドが入力値と一致 |
 | ALG-LLM-08 | `LLMProposal` | 必須フィールド欠落で ValidationError を送出する | `analysis_report` を省略 | `pydantic.ValidationError` を送出 |
-| ALG-LLM-09 | `PromptBuilder.build_system_prompt` | 出力にすべてのパラメータ名が含まれる | 4 次元 `SearchSpace` と `objective_name` を渡す | `"n_hidden_layers"`, `"n_neurons"`, `"lr"`, `"epochs_adam"` がすべて含まれる |
-| ALG-LLM-10 | `PromptBuilder.build_system_prompt` | 出力に各パラメータの探索範囲が含まれる | 4 次元 `SearchSpace` を渡す | 各パラメータの `low`, `high` 値が文字列として含まれる |
-| ALG-LLM-11 | `PromptBuilder.build_human_prompt` | 出力に全トライアルの結果が含まれる | 3 件の `TrialResult` リストと `iteration_id=2` を渡す | `trial_id` 0, 1, 2 の objective 値がすべて含まれる |
-| ALG-LLM-12 | `PromptBuilder.build_human_prompt` | 出力に現在の最良点情報が含まれる | 複数トライアルを渡す | 最大 objective を持つトライアルの `trial_id` が含まれる |
+| ALG-LLM-09 | `MaximizeObjectivePromptBuilder.build_system_prompt` | 出力にすべてのパラメータ名が含まれる | 4 次元 `SearchSpace` と `objective_name` を渡す | `"n_hidden_layers"`, `"n_neurons"`, `"lr"`, `"epochs_adam"` がすべて含まれる |
+| ALG-LLM-10 | `MaximizeObjectivePromptBuilder.build_system_prompt` | 出力に各パラメータの探索範囲が含まれる | 4 次元 `SearchSpace` を渡す | 各パラメータの `low`, `high` 値が文字列として含まれる |
+| ALG-LLM-11 | `MaximizeObjectivePromptBuilder.build_human_prompt` | 出力に全トライアルの結果が含まれる | 3 件の `TrialResult` リストと `iteration_id=2` を渡す | `trial_id` 0, 1, 2 の objective 値がすべて含まれる |
+| ALG-LLM-12 | `MaximizeObjectivePromptBuilder.build_human_prompt` | 出力に現在の最良点情報が含まれる | 複数トライアルを渡す | 最大 objective を持つトライアルの `trial_id` が含まれる |
 | ALG-LLM-13 | `LLMOptimizer.__init__` | `GEMINI_API_KEY` 未設定時に `ValueError` を送出 | `chain=None` かつ環境変数未設定 | `ValueError` を送出 |
 | ALG-LLM-14 | `LLMOptimizer.__init__` | `MockChain` を `chain` 引数で注入できる | `chain=MockChain()` を渡す | 例外なく初期化される |
 | ALG-LLM-15 | `LLMOptimizer.optimize` | Phase 1 で `n_initial` 件のトライアルが `is_initial=True` で生成される | `MockChain`, `config.n_initial=3` | `result.trials[:3]` の `is_initial` がすべて `True` |
@@ -58,7 +58,7 @@
 | THR-LLM-02 | `LLMResult.best_objective` は全トライアルの最大値（`llm_opt_design.md` § LLMResult） | `LLMOptimizer.optimize` | `result.best_objective == max(t.objective for t in result.trials)` が成立する | 完全一致 |
 | THR-LLM-03 | `LLMResult.best_params` は `best_trial_id` のトライアルのパラメータ（`llm_opt_design.md` § LLMResult） | `LLMOptimizer.optimize` | `result.best_params == result.trials[result.best_trial_id].params` が成立する | 完全一致 |
 | THR-LLM-04 | クランプ後のパラメータは探索空間の境界内に収まる（`llm_opt_design.md` § 7） | `LLMOptimizer.optimize` | Phase 2 の全 `TrialResult.params` について `low <= v <= high` が各次元で成立する | 完全一致 |
-| THR-LLM-05 | `PromptBuilder` のプロンプトは `SearchSpace` のすべてのパラメータ情報を含む（`llm_opt_design.md` § PromptBuilder） | `PromptBuilder.build_system_prompt` | 探索空間の全パラメータ名、型、上下限が出力文字列に含まれる | 文字列包含チェック |
+| THR-LLM-05 | `PromptBuilder` のプロンプトは `SearchSpace` のすべてのパラメータ情報を含む（`llm_opt_design.md` § PromptBuilder） | `MaximizeObjectivePromptBuilder.build_system_prompt` | 探索空間の全パラメータ名、型、上下限が出力文字列に含まれる | 文字列包含チェック |
 | THR-LLM-06 | `LLMIterationMeta.proposed_params` は対応する `TrialResult` の評価点と一致する（クランプ・丸め後）（`llm_opt_design.md` § 7） | `LLMOptimizer.optimize` | `meta.proposed_params` をクランプ・丸めした結果が `trials[n_initial + meta.iteration_id].params` と一致する | `atol=1e-9` |
 
 ---

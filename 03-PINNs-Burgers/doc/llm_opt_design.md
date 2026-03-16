@@ -63,7 +63,9 @@ class LLMOptimizer(BaseOptimizer):
 | `LLMProposal` | `opt_agent.proposal` | Pydantic BaseModel | LLM 構造化出力スキーマの定義と検証 | Phase 2 の LLM 応答パース |
 | `BaseChain` | `opt_agent.chain` | 抽象クラス（ABC） | LLM 呼び出しの抽象インターフェース定義 | Phase 2 の LLM 推論 |
 | `GeminiChain` | `opt_agent.chain` | 具象クラス | LangChain を使った Gemini API 呼び出し実装 | Phase 2 の LLM 推論（本番） |
-| `PromptBuilder` | `opt_agent.prompt` | 具象クラス（静的メソッド） | 探索履歴をプロンプト文字列に変換 | Phase 2 のプロンプト構築 |
+| `PromptBuilder` | `opt_agent.prompt` | 抽象クラス（ABC） | プロンプト構築戦略のインターフェース定義 | Phase 2 のプロンプト構築 |
+| `MaximizeObjectivePromptBuilder` | `opt_agent.prompt` | 具象クラス | 目的関数の最大化を指示するプロンプト構築 | 単独 LLM 最適化のプロンプト構築 |
+| `NarrowSearchSpacePromptBuilder` | `opt_agent.prompt` | 具象クラス | 有望領域の特定・探索を指示するプロンプト構築 | Hybrid Phase 1 のプロンプト構築 |
 | `LLMOptimizer` | `opt_agent.optimizer` | 具象クラス | 最適化ループ全体のオーケストレーション | Phase 1/2/3 の実行制御 |
 | `IterationReportWriter` | `opt_agent.report` | 具象クラス | Markdown レポートをイテレーション毎に逐次書き込み | Phase 2 の実行時レポート生成 |
 | `IterationCallback` | `opt_agent.optimizer` | 型エイリアス | `on_iteration` コールバックの型定義 | Phase 2 のフック機構 |
@@ -316,21 +318,24 @@ class GeminiChain(BaseChain):
 **SOLIDチェック**
 - S: Gemini API 呼び出しのみを責務とする
 - L: `BaseChain` の契約（`invoke` のシグネチャ）を守る
-- D: `PromptBuilder`（具象）に依存するが、テスト時は `MockChain` に差し替え可能
+- D: `PromptBuilder`（ABC）に依存し、具象実装は注入される。テスト時は `MockChain` に差し替え可能
 
 ---
 
 #### `PromptBuilder`
 
 **配置**：`opt_agent/prompt.py`
-**種別**：具象クラス（静的メソッドのみ）
-**責務**：探索空間・履歴・目的関数の情報をプロンプト文字列に変換する
+**種別**：抽象クラス（ABC）
+**責務**：プロンプト構築戦略のインターフェースを定義する（Strategy パターンの抽象）
 **対応するアルゴリズムの概念**：Phase 2 のプロンプト構築
 
 ```python
-class PromptBuilder:
-    @staticmethod
+from abc import ABC, abstractmethod
+
+class PromptBuilder(ABC):
+    @abstractmethod
     def build_system_prompt(
+        self,
         search_space: SearchSpace,
         objective_name: str,
     ) -> str:
@@ -341,8 +346,9 @@ class PromptBuilder:
         """
         ...
 
-    @staticmethod
+    @abstractmethod
     def build_human_prompt(
+        self,
         trials: list[TrialResult],
         iteration_id: int,
     ) -> str:
@@ -354,8 +360,59 @@ class PromptBuilder:
 ```
 
 **SOLIDチェック**
-- S: プロンプト文字列の構築のみを責務とする（API 呼び出しは `GeminiChain` が担う）
-- O: プロンプト内容の変更はこのクラスの変更だけで済む
+- S: プロンプト文字列の構築インターフェース定義のみを責務とする
+- O: 新しいプロンプト戦略は `PromptBuilder` を継承した新クラスの追加で対応できる
+- D: `GeminiChain` はこの抽象に依存し、具象実装には依存しない
+
+---
+
+#### `MaximizeObjectivePromptBuilder`
+
+**配置**：`opt_agent/prompt.py`
+**種別**：具象クラス（`PromptBuilder` 継承）
+**責務**：目的関数の最大化を指示するプロンプトを構築する
+**対応するアルゴリズムの概念**：単独 LLM 最適化の Phase 2 プロンプト構築
+
+```python
+class MaximizeObjectivePromptBuilder(PromptBuilder):
+    def build_system_prompt(self, search_space, objective_name) -> str:
+        """「目的関数を最大化する次の点を提案せよ」という指示を含む。"""
+        ...
+
+    def build_human_prompt(self, trials, iteration_id) -> str:
+        """全トライアル履歴と現在の最良点を含む。"""
+        ...
+```
+
+**SOLIDチェック**
+- S: 最大化指向のプロンプト生成のみを責務とする
+- L: `PromptBuilder` の契約（メソッドシグネチャ）を守る
+
+---
+
+#### `NarrowSearchSpacePromptBuilder`
+
+**配置**：`opt_agent/prompt.py`
+**種別**：具象クラス（`PromptBuilder` 継承）
+**責務**：有望領域の広域探索・境界特定を指示するプロンプトを構築する
+**対応するアルゴリズムの概念**：Hybrid Phase 1 のプロンプト構築
+
+```python
+class NarrowSearchSpacePromptBuilder(PromptBuilder):
+    def build_system_prompt(self, search_space, objective_name) -> str:
+        """「探索空間を広くカバーし、有望な領域の境界を特定せよ」という指示を含む。
+        LLM に探索フェーズであること・次フェーズで BO が実行されることを伝える。
+        """
+        ...
+
+    def build_human_prompt(self, trials, iteration_id) -> str:
+        """全トライアル履歴と現在の最良点を含む（最大化プロンプトと同一フォーマット）。"""
+        ...
+```
+
+**SOLIDチェック**
+- S: 空間絞り込み指向のプロンプト生成のみを責務とする
+- L: `PromptBuilder` の契約（メソッドシグネチャ）を守る
 
 ---
 
@@ -379,7 +436,13 @@ class LLMOptimizer(BaseOptimizer):
         config: LLMConfig = LLMConfig(),
         chain: BaseChain | None = None,
         on_iteration: IterationCallback | None = None,
-    ) -> None: ...
+        prompt_builder: PromptBuilder | None = None,
+    ) -> None:
+        """
+        prompt_builder: chain が None のとき GeminiChain に渡すプロンプト戦略。
+        chain 提供時は無視される。None のとき MaximizeObjectivePromptBuilder を使用。
+        """
+        ...
 
     def _run_sequential_search(self, initial_trials: list[TrialResult]) -> list[TrialResult]:
         """Phase 2: LLM に n_iterations 回提案させて評価する。
@@ -554,8 +617,17 @@ classDiagram
             +invoke(search_space, trials, objective_name, iteration_id) LLMProposal
         }
         class PromptBuilder {
-            +build_system_prompt(search_space, objective_name)$ str
-            +build_human_prompt(trials, iteration_id)$ str
+            <<abstract>>
+            +build_system_prompt(search_space, objective_name)* str
+            +build_human_prompt(trials, iteration_id)* str
+        }
+        class MaximizeObjectivePromptBuilder {
+            +build_system_prompt(search_space, objective_name) str
+            +build_human_prompt(trials, iteration_id) str
+        }
+        class NarrowSearchSpacePromptBuilder {
+            +build_system_prompt(search_space, objective_name) str
+            +build_human_prompt(trials, iteration_id) str
         }
         class LLMOptimizer {
             +optimize() LLMResult
@@ -582,7 +654,9 @@ classDiagram
     LLMOptimizer ..> LLMIterationMeta : produces
 
     BaseChain <|-- GeminiChain : implements
-    GeminiChain --> PromptBuilder : uses
+    GeminiChain --> PromptBuilder : depends on (Strategy)
+    PromptBuilder <|-- MaximizeObjectivePromptBuilder : implements
+    PromptBuilder <|-- NarrowSearchSpacePromptBuilder : implements
     GeminiChain ..> LLMProposal : produces
 
     LLMResult --> LLMConfig : contains
