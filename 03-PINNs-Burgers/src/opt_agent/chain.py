@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from opt_tool.result import TrialResult
 from opt_tool.space import SearchSpace
 from opt_agent.proposal import LLMProposal
-from opt_agent.prompt import PromptBuilder
+from opt_agent.prompt import MaximizeObjectivePromptBuilder, PromptBuilder
 
 
 class BaseChain(ABC):
@@ -52,7 +52,12 @@ class GeminiChain(BaseChain):
     Retries up to 3 times on API failure.
     """
 
-    def __init__(self, model_name: str, api_key: str) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        prompt_builder: PromptBuilder | None = None,
+    ) -> None:
         """Initialize GeminiChain with a LangChain LCEL chain.
 
         Parameters
@@ -61,10 +66,17 @@ class GeminiChain(BaseChain):
             Gemini model name (e.g., "gemini-2.0-flash").
         api_key:
             Google Gemini API key.
+        prompt_builder:
+            Strategy for building system and human prompts.
+            Defaults to ``MaximizeObjectivePromptBuilder`` when None.
         """
         from langchain_google_genai import ChatGoogleGenerativeAI
         from langchain_core.prompts import ChatPromptTemplate
 
+        self._prompt_builder: PromptBuilder = (
+            prompt_builder if prompt_builder is not None
+            else MaximizeObjectivePromptBuilder()
+        )
         llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=api_key,
@@ -107,8 +119,8 @@ class GeminiChain(BaseChain):
         RuntimeError
             If all 3 retry attempts fail.
         """
-        system_prompt = PromptBuilder.build_system_prompt(search_space, objective_name)
-        human_prompt = PromptBuilder.build_human_prompt(trials, iteration_id)
+        system_prompt = self._prompt_builder.build_system_prompt(search_space, objective_name)
+        human_prompt = self._prompt_builder.build_human_prompt(trials, iteration_id)
 
         last_error: Exception | None = None
         for attempt in range(3):

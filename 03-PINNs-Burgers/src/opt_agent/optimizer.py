@@ -5,6 +5,7 @@ from typing import Optional
 
 from opt_agent.chain import BaseChain, GeminiChain
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
+from opt_agent.prompt import PromptBuilder
 from opt_tool.base import BaseOptimizer
 from opt_tool.result import TrialResult
 from opt_tool.space import SearchSpace
@@ -40,6 +41,7 @@ class LLMOptimizer(BaseOptimizer):
         config: LLMConfig = LLMConfig(),
         chain: BaseChain | None = None,
         on_iteration: Optional[IterationCallback] = None,
+        prompt_builder: PromptBuilder | None = None,
     ) -> None:
         """Initialize LLMOptimizer.
 
@@ -59,6 +61,10 @@ class LLMOptimizer(BaseOptimizer):
             Called with (meta, trial, all_trials_so_far) immediately after
             the proposed point is evaluated.  Use this hook to write
             per-iteration reports or log streaming results.
+        prompt_builder:
+            Strategy for building LLM prompts. Ignored when ``chain`` is
+            provided. Defaults to ``MaximizeObjectivePromptBuilder`` when
+            None and no chain is given.
 
         Raises
         ------
@@ -82,7 +88,11 @@ class LLMOptimizer(BaseOptimizer):
                     "Set it in .env or pass a chain argument."
                 )
             model_name = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.0-flash")
-            self._chain = GeminiChain(model_name=model_name, api_key=api_key)
+            self._chain = GeminiChain(
+                model_name=model_name,
+                api_key=api_key,
+                prompt_builder=prompt_builder,
+            )
 
     def _run_sequential_search(
         self, initial_trials: list[TrialResult]

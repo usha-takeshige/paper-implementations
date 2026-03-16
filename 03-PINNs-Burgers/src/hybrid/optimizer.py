@@ -9,6 +9,7 @@ from hybrid.result import HybridResult
 from opt_agent.chain import BaseChain
 from opt_agent.config import LLMConfig
 from opt_agent.optimizer import LLMOptimizer
+from opt_agent.prompt import NarrowSearchSpacePromptBuilder
 from opt_tool.objective import ObjectiveFunction
 from opt_tool.result import TrialResult
 from opt_tool.space import HyperParameter, SearchSpace
@@ -92,6 +93,7 @@ class HybridOptimizer:
             objective=self._objective,
             config=modified_llm_config,
             chain=self._chain,
+            prompt_builder=NarrowSearchSpacePromptBuilder(),
         )
         llm_result = llm_optimizer.optimize()
         llm_trials = llm_result.trials
