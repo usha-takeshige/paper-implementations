@@ -176,7 +176,6 @@ def plot_parallel_coords(result: BOResult, search_space: SearchSpace) -> None:
 
 def plot_best_solution_heatmap(
     result: BOResult,
-    search_space: SearchSpace,
     pde_config: PDEConfig,
     base_training_config: TrainingConfig,
     x_mesh: np.ndarray,
@@ -326,7 +325,7 @@ def main() -> None:
     plot_objective_scatter(result)
     plot_parallel_coords(result, search_space)
     plot_best_solution_heatmap(
-        result, search_space, pde_config, base_training_config,
+        result, pde_config, base_training_config,
         X_mesh, T_mesh, usol, t_grid, x_grid,
     )
 
