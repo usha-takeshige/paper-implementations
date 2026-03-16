@@ -57,21 +57,27 @@ $$u(0, x) = -\sin(\pi x), \quad u(t, \pm 1) = 0$$
 │   ├── config.py       # LLMConfig, LLMResult, LLMIterationMeta
 │   ├── optimizer.py    # LLMOptimizer (Facade, BaseOptimizer 継承)
 │   ├── chain.py        # BaseChain ABC, GeminiChain (LangChain + Gemini)
-│   ├── prompt.py       # PromptBuilder (システム・ヒューマンプロンプト構築)
+│   ├── prompt.py       # PromptBuilder ABC, MaximizeObjectivePromptBuilder, NarrowSearchSpacePromptBuilder
 │   ├── proposal.py     # LLMProposal (Pydantic 構造化出力スキーマ)
 │   └── report.py       # IterationReportWriter (逐次 Markdown レポート)
+├── src/hybrid/
+│   ├── optimizer.py    # HybridOptimizer (LLM 探索 + BO 収束の 2 フェーズ最適化)
+│   └── result.py       # HybridResult
 ├── example/
 │   ├── forward_problem.py      # 順問題の使用例
 │   ├── inverse_problem.py      # 逆問題の使用例
 │   ├── bo_forward.py           # ベイズ最適化によるハイパーパラメータ探索
-│   └── opt_agent_forward.py    # LLM エージェントによるハイパーパラメータ探索
+│   ├── opt_agent_forward.py    # LLM エージェントによるハイパーパラメータ探索
+│   └── hybrid_forward.py       # Hybrid（LLM + BO）によるハイパーパラメータ探索
 ├── tests/
-│   ├── test_bo_algorithm.py    # BO アルゴリズム実装テスト (ALG-BO-*)
-│   ├── test_bo_theory.py       # BO 理論的性質テスト (THR-BO-*)
-│   ├── test_llm_algorithm.py   # LLM アルゴリズム実装テスト (ALG-LLM-*)
-│   ├── test_llm_theory.py      # LLM 理論的性質テスト (THR-LLM-*)
-│   ├── check_bo_behavior.py    # BO 振る舞い確認スクリプト（グラフ出力）
-│   └── check_llm_behavior.py   # LLM 振る舞い確認スクリプト（グラフ出力）
+│   ├── test_bo_algorithm.py       # BO アルゴリズム実装テスト (ALG-BO-*)
+│   ├── test_bo_theory.py          # BO 理論的性質テスト (THR-BO-*)
+│   ├── test_llm_algorithm.py      # LLM アルゴリズム実装テスト (ALG-LLM-*)
+│   ├── test_llm_theory.py         # LLM 理論的性質テスト (THR-LLM-*)
+│   ├── test_hybrid_algorithm.py   # Hybrid アルゴリズム実装テスト (ALG-HYB-*)
+│   ├── check_bo_behavior.py       # BO 振る舞い確認スクリプト（グラフ出力）
+│   ├── check_llm_behavior.py      # LLM 振る舞い確認スクリプト（グラフ出力）
+│   └── check_hybrid_behavior.py   # Hybrid 振る舞い確認スクリプト（グラフ出力）
 ├── doc/
 │   ├── paper_method.md      # 論文アルゴリズム抽出
 │   ├── imp_design.md        # PINNs 実装設計書
@@ -202,6 +208,50 @@ uv run python example/opt_agent_forward.py
 | `n_iterations` | 20 | Phase 2 の LLM 提案回数 |
 | `seed` | 42 | Sobol 乱数シード（再現性） |
 
+**プロンプトの切り替え**（Strategy パターン）
+
+`GeminiChain` は `PromptBuilder` を DI で受け取り、LLM への指示内容を差し替えられる。
+
+| クラス | 指示内容 | 用途 |
+|--------|---------|------|
+| `MaximizeObjectivePromptBuilder` | 目的関数の最大値を目指す | `LLMOptimizer` のスタンドアロン利用 |
+| `NarrowSearchSpacePromptBuilder` | 探索空間を広く探索し有望領域を特定する | `HybridOptimizer` の Phase 1 |
+
+`GeminiChain` は `prompt_builder` 省略時に `MaximizeObjectivePromptBuilder` を使用する。
+
+---
+
+### Hybrid（LLM + BO）によるハイパーパラメータ探索
+
+LLM エージェントによる広域探索（Phase 1）と、上位試行から絞り込んだ探索空間での BO（Phase 2）を組み合わせた 2 フェーズ最適化。
+
+```bash
+uv run python example/hybrid_forward.py
+```
+
+出力先: `example/hybrid_output/`
+
+| ファイル | 内容 |
+|---------|------|
+| `hybrid_convergence.png` | 累積ベスト目的関数値の推移（両フェーズ） |
+| `hybrid_objective_scatter.png` | 全試行の目的関数値（フェーズ別に色分け） |
+| `hybrid_space_comparison.png` | 元の探索空間 vs 絞り込み後の探索空間の比較 |
+| `hybrid_best_solution_heatmap.png` | 最良パラメータによる予測解 vs 参照解 |
+
+**最適化フロー**
+
+1. **Phase 1（LLM 広域探索）**: `NarrowSearchSpacePromptBuilder` を使った LLM エージェントが元の探索空間を広く探索し有望領域を特定する
+2. **探索空間の絞り込み**: Phase 1 の上位 `top_k_ratio` 割の試行をもとに各パラメータの新しい上下限を算出する（`margin_ratio` で余裕を付加）
+3. **Phase 2（BO 精密探索）**: 絞り込まれた探索空間で BoTorch ベースの GP-BO を実行し、最適点へ収束させる
+
+**HybridOptimizer のパラメータ**
+
+| パラメータ | デフォルト | 意味 |
+|-----------|-----------|------|
+| `n_llm_iterations` | 10 | Phase 1 の LLM 提案回数 |
+| `top_k_ratio` | 0.3 | 探索空間絞り込みに使う上位試行の割合 |
+| `margin_ratio` | 0.1 | 上下限に加える余裕（元範囲に対する比率） |
+
 ---
 
 ### Python API
@@ -244,6 +294,7 @@ uv run pytest tests/ -m theory
 # 振る舞い確認（グラフ出力・目視確認用）
 uv run python tests/check_bo_behavior.py
 uv run python tests/check_llm_behavior.py
+uv run python tests/check_hybrid_behavior.py
 ```
 
 ---
