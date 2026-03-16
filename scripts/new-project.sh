@@ -29,7 +29,87 @@ if [[ -e "$PROJECT_DIR" ]]; then
   exit 1
 fi
 
-echo "Creating project: $PROJECT_NAME"
+# ============================================================
+# Phase 1: Update test.yml on a setup branch and merge to main
+# ============================================================
+
+WORKFLOW_FILE="$REPO_ROOT/.github/workflows/test.yml"
+if [[ ! -f "$WORKFLOW_FILE" ]]; then
+  echo "Error: '$WORKFLOW_FILE' not found. Cannot proceed." >&2
+  exit 1
+fi
+
+SETUP_BRANCH="${PROJECT_NAME}/setup-ci"
+
+echo "=== Phase 1: CI setup ==="
+
+# Ensure we start from an up-to-date main
+cd "$REPO_ROOT"
+git checkout main
+git pull origin main
+
+git checkout -b "$SETUP_BRANCH"
+echo "  created branch $SETUP_BRANCH"
+
+python3 << PYEOF
+import re
+import sys
+
+filepath = "$WORKFLOW_FILE"
+project_name = "$PROJECT_NAME"
+
+with open(filepath) as f:
+    content = f.read()
+
+entry = "            {}:\n              - '{}/**'\n".format(project_name, project_name)
+
+matches = list(re.finditer(r"              - '[^']+/\*\*'\n", content))
+if matches:
+    insert_pos = matches[-1].end()
+    content = content[:insert_pos] + entry + content[insert_pos:]
+    with open(filepath, "w") as f:
+        f.write(content)
+    print("  updated .github/workflows/test.yml")
+else:
+    print("  Warning: Could not find filter insertion point in test.yml", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+git add "$WORKFLOW_FILE"
+git commit -m "chore: add $PROJECT_NAME to CI path filter #$(echo "$PROJECT_NAME" | grep -oE '^[0-9]+')"
+git push -u origin "$SETUP_BRANCH"
+echo "  pushed $SETUP_BRANCH"
+
+gh pr create \
+  --title "chore: add $PROJECT_NAME to test.yml filter" \
+  --body "$(cat <<EOF
+## Summary
+- Add \`$PROJECT_NAME\` to the \`paths-filter\` in \`.github/workflows/test.yml\`
+
+This PR must be merged to main before the project branch is created so that CI
+picks up changes in \`$PROJECT_NAME/**\` from the start.
+EOF
+)"
+echo "  pull request created"
+
+gh pr merge --squash --delete-branch
+echo "  pull request merged"
+
+# Return to main with the merged test.yml
+git checkout main
+git pull origin main
+echo ""
+
+# ============================================================
+# Phase 2: Create project branch and directory structure
+# ============================================================
+
+PROJECT_BRANCH="${PROJECT_NAME}/feat"
+
+echo "=== Phase 2: Project setup ==="
+
+git checkout -b "$PROJECT_BRANCH"
+echo "  created branch $PROJECT_BRANCH"
 
 # --- Create standard subdirectories ---
 for dir in src "src/$PAPER_NAME" tests doc example; do
@@ -77,34 +157,6 @@ dev = [
 ]
 EOF
 echo "  created $PROJECT_NAME/pyproject.toml"
-
-# --- Update .github/workflows/test.yml filters ---
-WORKFLOW_FILE="$REPO_ROOT/.github/workflows/test.yml"
-if [[ -f "$WORKFLOW_FILE" ]]; then
-  python3 << PYEOF
-import re
-
-filepath = "$WORKFLOW_FILE"
-project_name = "$PROJECT_NAME"
-
-with open(filepath) as f:
-    content = f.read()
-
-entry = "            {}:\n              - '{}/**'\n".format(project_name, project_name)
-
-matches = list(re.finditer(r"              - '[^']+/\*\*'\n", content))
-if matches:
-    insert_pos = matches[-1].end()
-    content = content[:insert_pos] + entry + content[insert_pos:]
-    with open(filepath, "w") as f:
-        f.write(content)
-    print("  updated .github/workflows/test.yml")
-else:
-    print("  Warning: Could not find filter insertion point in test.yml")
-PYEOF
-else
-  echo "  Warning: '$WORKFLOW_FILE' not found. Skipping."
-fi
 
 echo ""
 echo "Done. Next steps:"
