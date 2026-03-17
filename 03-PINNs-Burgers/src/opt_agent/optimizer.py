@@ -1,5 +1,6 @@
 """LLM-based hyperparameter optimizer (Facade)."""
 
+import time
 from collections.abc import Callable
 from typing import Optional
 
@@ -117,18 +118,21 @@ class LLMOptimizer(BaseOptimizer):
         self._metas = []
 
         for i in range(self._config.n_iterations):
+            t0 = time.perf_counter()
             proposal = self._chain.invoke(
                 search_space=self._search_space,
                 trials=trials,
                 objective_name=self._objective.name,
                 iteration_id=i,
             )
+            proposal_time = time.perf_counter() - t0
 
             # Clamp and round proposed parameters
             params = self._clamp_params(proposal.proposed_params)
 
             trial_id = len(trials)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
+            trial = trial.model_copy(update={"proposal_time": proposal_time})
             trials.append(trial)
             label = f"[LLM    {i + 1:>{len(str(self._config.n_iterations))}}/{self._config.n_iterations}]"
             self._log_trial(trial, label)
@@ -138,6 +142,7 @@ class LLMOptimizer(BaseOptimizer):
                 analysis_report=proposal.analysis_report,
                 proposed_params=params,
                 reasoning=proposal.reasoning,
+                proposal_time=proposal_time,
             )
             self._metas.append(meta)
 

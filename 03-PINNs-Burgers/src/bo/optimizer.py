@@ -1,5 +1,7 @@
 """Bayesian optimizer using BoTorch SingleTaskGP."""
 
+import time
+
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, UpperConfidenceBound
 from botorch.fit import fit_gpytorch_mll
@@ -100,6 +102,7 @@ class BayesianOptimizer(BaseOptimizer):
                 )
 
             # Optimize acquisition to get next candidate (q=1: one point at a time)
+            t0 = time.perf_counter()
             x_next, _ = optimize_acqf(
                 acq_function=acq_func,
                 bounds=self._search_space.bounds,
@@ -107,9 +110,11 @@ class BayesianOptimizer(BaseOptimizer):
                 num_restarts=self._config.num_restarts,
                 raw_samples=self._config.raw_samples,
             )  # (1, dim)
+            proposal_time = time.perf_counter() - t0
 
             params = self._search_space.from_tensor(x_next)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
+            trial = trial.model_copy(update={"proposal_time": proposal_time})
             trials.append(trial)
             label = f"[BO     {iteration + 1:>{n_iter_width}}/{self._config.n_iterations}]"
             self._log_trial(trial, label)

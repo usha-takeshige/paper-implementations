@@ -278,7 +278,7 @@ def save_trials_csv(result: HybridResult) -> None:
     fieldnames = [
         "global_trial_id", "phase", "trial_id", "is_initial",
         *param_names,
-        "objective", "rel_l2_error", "elapsed_time",
+        "objective", "rel_l2_error", "elapsed_time", "proposal_time",
     ]
     path = os.path.join(OUTPUT_DIR, "hybrid_trials.csv")
     with open(path, "w", newline="") as f:
@@ -295,6 +295,7 @@ def save_trials_csv(result: HybridResult) -> None:
                     "objective": t.objective,
                     "rel_l2_error": t.rel_l2_error,
                     "elapsed_time": t.elapsed_time,
+                    "proposal_time": t.proposal_time,
                 }
                 for name in param_names:
                     row[name] = t.params.get(name, "")
