@@ -26,8 +26,10 @@ Output (example/hybrid_output/):
     hybrid_objective_scatter.png     -- all trial objectives colored by phase
     hybrid_space_comparison.png      -- original vs narrowed bounds bar chart
     hybrid_best_solution_heatmap.png -- predicted vs reference solution heatmap
+    hybrid_trials.csv                -- all trial results (both phases)
 """
 
+import csv
 import math
 import os
 import sys
@@ -261,6 +263,47 @@ def plot_best_solution_heatmap(
 
 
 # ---------------------------------------------------------------------------
+# CSV output
+# ---------------------------------------------------------------------------
+
+
+def save_trials_csv(result: HybridResult) -> None:
+    """Save all trial results from both phases to a CSV file.
+
+    Columns: global_trial_id, phase, trial_id, is_initial,
+             n_hidden_layers, n_neurons, lr, epochs_adam,
+             objective, rel_l2_error, elapsed_time
+    """
+    param_names = ["n_hidden_layers", "n_neurons", "lr", "epochs_adam"]
+    fieldnames = [
+        "global_trial_id", "phase", "trial_id", "is_initial",
+        *param_names,
+        "objective", "rel_l2_error", "elapsed_time",
+    ]
+    path = os.path.join(OUTPUT_DIR, "hybrid_trials.csv")
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        global_id = 0
+        for phase, trials in [("llm", result.llm_trials), ("bo", result.bo_trials)]:
+            for t in trials:
+                row: dict = {
+                    "global_trial_id": global_id,
+                    "phase": phase,
+                    "trial_id": t.trial_id,
+                    "is_initial": t.is_initial,
+                    "objective": t.objective,
+                    "rel_l2_error": t.rel_l2_error,
+                    "elapsed_time": t.elapsed_time,
+                }
+                for name in param_names:
+                    row[name] = t.params.get(name, "")
+                writer.writerow(row)
+                global_id += 1
+    print(f"  Saved: {path}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -309,7 +352,7 @@ def main() -> None:
 
     # 6. Run hybrid optimization
     llm_config = LLMConfig(n_initial=5, n_iterations=10, seed=42)
-    bo_config = BOConfig(n_initial=5, n_iterations=15, acquisition="EI", seed=42)
+    bo_config = BOConfig(n_initial=5, n_iterations=10, acquisition="EI", seed=42)
     print(
         f"\nStarting Hybrid: n_llm_initial={llm_config.n_initial}, "
         f"n_llm_iterations=10, "
@@ -331,7 +374,9 @@ def main() -> None:
     print(f"  Best objective: {result.best_objective:.4e}")
     print(f"  Best params:    {result.best_params}")
 
-    # 7. Visualizations
+    # 7. Save CSV and visualizations
+    print("\nSaving trial history ...")
+    save_trials_csv(result)
     print("\nGenerating plots ...")
     plot_convergence(result)
     plot_objective_scatter(result)
