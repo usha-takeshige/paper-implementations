@@ -16,7 +16,7 @@ class BurgersPINNSolver:
 
     Algorithm 2（順問題）と Algorithm 3（逆問題）をパブリック API として公開する。
     内部クラスの組み立てを担う Facade として機能する。
-    MPS（Apple Silicon）が利用可能な場合は自動的に使用する。
+    device を省略した場合は MPS（Apple Silicon）→ CUDA → CPU の順で自動選択する。
     """
 
     def __init__(
@@ -24,6 +24,7 @@ class BurgersPINNSolver:
         pde_config: PDEConfig,
         network_config: NetworkConfig,
         training_config: TrainingConfig,
+        device: str | torch.device | None = None,
     ) -> None:
         """初期化する。
 
@@ -31,12 +32,18 @@ class BurgersPINNSolver:
             pde_config: 問題設定（ν，ドメイン範囲）。
             network_config: ネットワーク構造設定（層数，ニューロン数）。
             training_config: 学習設定（N_u，N_f，lr，エポック数）。
+            device: 使用デバイス（"cpu", "cuda", "mps" 等）。
+                None の場合は MPS → CUDA → CPU の順で自動選択する。
         """
         self.pde_config = pde_config
         self.network_config = network_config
         self.training_config = training_config
-        if torch.backends.mps.is_available():
+        if device is not None:
+            self._device = torch.device(device)
+        elif torch.backends.mps.is_available():
             self._device = torch.device("mps")
+        elif torch.cuda.is_available():
+            self._device = torch.device("cuda")
         else:
             self._device = torch.device("cpu")
 

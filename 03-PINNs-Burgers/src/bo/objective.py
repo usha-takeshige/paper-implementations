@@ -39,6 +39,7 @@ class PINNObjectiveFunction(ObjectiveFunction):
         t_mesh: np.ndarray,
         usol: np.ndarray,
         base_training_config: TrainingConfig,
+        device: str | None = None,
     ) -> None:
         """Initialize with fixed problem data shared across all trials.
 
@@ -60,6 +61,9 @@ class PINNObjectiveFunction(ObjectiveFunction):
             Base training config providing fixed values for n_u, n_f,
             and epochs_lbfgs. n_hidden_layers, n_neurons, lr, epochs_adam
             are overridden by the hyperparameter dict passed to __call__.
+        device:
+            Device name to pass to BurgersPINNSolver (e.g. "cpu", "cuda",
+            "mps"). None means auto-selection (MPS → CUDA → CPU).
         """
         self._pde_config = pde_config
         self._boundary_data = boundary_data
@@ -68,6 +72,7 @@ class PINNObjectiveFunction(ObjectiveFunction):
         self._t_mesh = t_mesh
         self._usol = usol
         self._base_training_config = base_training_config
+        self._device = device
 
     @abstractmethod
     def _compute_objective(self, rel_l2_error: float, elapsed_time: float) -> float:
@@ -127,7 +132,9 @@ class PINNObjectiveFunction(ObjectiveFunction):
             epochs_lbfgs=self._base_training_config.epochs_lbfgs,
         )
 
-        solver = BurgersPINNSolver(self._pde_config, network_config, training_config)
+        solver = BurgersPINNSolver(
+            self._pde_config, network_config, training_config, device=self._device
+        )
         start = time.perf_counter()
         result = solver.solve_forward(self._boundary_data, self._collocation)
         elapsed_time = time.perf_counter() - start

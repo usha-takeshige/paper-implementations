@@ -348,6 +348,7 @@ def main() -> None:
         t_mesh=T_mesh,
         usol=usol,
         base_training_config=base_training_config,
+        device="cpu",
     )
 
     # 6. Run hybrid optimization
