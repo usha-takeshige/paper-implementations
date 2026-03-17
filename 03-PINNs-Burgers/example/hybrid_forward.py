@@ -115,7 +115,7 @@ def main() -> None:
     )
 
     # 6. Run hybrid optimization
-    llm_config = LLMConfig(n_initial=5, n_iterations=10, seed=42)
+    llm_config = LLMConfig(n_initial=5, seed=42)
     bo_config = BOConfig(n_initial=5, n_iterations=10, acquisition="EI", seed=42)
     n_llm_iterations = 10
     print(
