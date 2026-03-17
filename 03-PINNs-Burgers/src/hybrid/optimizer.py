@@ -111,6 +111,10 @@ class HybridOptimizer:
         narrowed_space = self._narrow_search_space(llm_trials)
         self._print_narrowing(self._search_space, narrowed_space)
 
+        # Filter LLM trials that fall within the narrowed space for BO warm-start
+        warm_trials = self._filter_trials_in_space(llm_trials, narrowed_space)
+        print(f"  Warm-start: {len(warm_trials)}/{len(llm_trials)} LLM trials reused in BO")
+
         # Phase 2: Bayesian Optimization on narrowed space
         print("\n=== Phase 2: Bayesian Optimization ===")
         bo_optimizer = BayesianOptimizer(
@@ -118,7 +122,7 @@ class HybridOptimizer:
             objective=self._objective,
             config=self._bo_config,
         )
-        bo_result = bo_optimizer.optimize()
+        bo_result = bo_optimizer.optimize(warm_start_trials=warm_trials)
         bo_trials = bo_result.trials
 
         # Result aggregation: find best across all trials
@@ -137,6 +141,31 @@ class HybridOptimizer:
             llm_config=self._llm_config,
             bo_config=self._bo_config,
         )
+
+    def _filter_trials_in_space(
+        self, trials: list[TrialResult], space: SearchSpace
+    ) -> list[TrialResult]:
+        """Return only trials whose params fall within the given space bounds.
+
+        Parameters
+        ----------
+        trials:
+            Candidate trials to filter.
+        space:
+            Target search space; bounds are used for the membership test.
+
+        Returns
+        -------
+        list[TrialResult]
+            Trials whose every parameter value is within [hp.low, hp.high].
+        """
+        return [
+            t for t in trials
+            if all(
+                hp.low <= t.params[hp.name] <= hp.high
+                for hp in space.parameters
+            )
+        ]
 
     def _narrow_search_space(self, trials: list[TrialResult]) -> SearchSpace:
         """Build a narrowed SearchSpace from the top Phase 1 trials.

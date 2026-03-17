@@ -70,7 +70,10 @@ class BaseOptimizer(ABC):
         self._objective = objective
         self._config = config
 
-    def optimize(self) -> BaseOptimizationResult:
+    def optimize(
+        self,
+        warm_start_trials: list[TrialResult] | None = None,
+    ) -> BaseOptimizationResult:
         """Run the full optimization loop and return the result.
 
         Executes the three-phase template:
@@ -78,35 +81,80 @@ class BaseOptimizer(ABC):
         Phase 2 — Sequential search (algorithm-specific, calls _run_sequential_search).
         Phase 3 — Result aggregation (algorithm-specific, calls _build_result).
 
+        Parameters
+        ----------
+        warm_start_trials:
+            Optional list of already-evaluated trials to reuse as initial data.
+            Trials outside the current search space bounds are silently dropped.
+            Remaining slots (up to n_initial) are filled with Sobol sampling.
+
         Returns
         -------
         BaseOptimizationResult
             Full optimization result (concrete subtype depends on subclass).
         """
-        initial_trials = self._run_initial_exploration()
+        initial_trials = self._run_initial_exploration(warm_start_trials)
         all_trials = self._run_sequential_search(initial_trials)
         return self._build_result(all_trials)
 
-    def _run_initial_exploration(self) -> list[TrialResult]:
-        """Phase 1: Sample n_initial points with Sobol and evaluate each.
+    def _run_initial_exploration(
+        self,
+        warm_start_trials: list[TrialResult] | None = None,
+    ) -> list[TrialResult]:
+        """Phase 1: Reuse warm-start trials then fill remaining slots with Sobol.
+
+        Warm-start trials that fall within the current search space bounds are
+        adopted without re-evaluation. Any remaining slots up to ``n_initial``
+        are filled by sampling from the Sobol sequence and evaluating the
+        objective. If no warm-start trials are provided, the behaviour is
+        identical to the original pure-Sobol initialisation.
+
+        Parameters
+        ----------
+        warm_start_trials:
+            Optional already-evaluated trials to reuse as initial data.
 
         Returns
         -------
         list[TrialResult]
-            Trial results for the initial Sobol samples.
+            Trial results for the initial phase (warm-start + Sobol fill-up).
         """
-        samples = self._search_space.sample_sobol(
-            n=self._config.n_initial,
-            seed=self._config.seed,
-        )
+        # Filter warm-start trials that lie within the current search space
+        valid_warm: list[TrialResult] = []
+        if warm_start_trials:
+            valid_warm = [
+                t for t in warm_start_trials
+                if all(
+                    hp.low <= t.params[hp.name] <= hp.high
+                    for hp in self._search_space.parameters
+                )
+            ]
+
+        # Determine how many new Sobol samples are needed to reach n_initial
+        n_fill = max(0, self._config.n_initial - len(valid_warm))
+
         trials: list[TrialResult] = []
-        n_width = len(str(self._config.n_initial))
-        for i in range(self._config.n_initial):
-            params = self._search_space.from_tensor(samples[i])
-            trial = self._objective(params=params, trial_id=i, is_initial=True)
-            trials.append(trial)
-            label = f"[Initial {i + 1:>{n_width}}/{self._config.n_initial}]"
-            self._log_trial(trial, label)
+
+        # Adopt warm-start trials without re-evaluation
+        for t in valid_warm:
+            trials.append(t)
+            self._log_trial(t, "[Warm    ]")
+
+        # Sample and evaluate Sobol fill-up points
+        if n_fill > 0:
+            samples = self._search_space.sample_sobol(
+                n=n_fill,
+                seed=self._config.seed,
+            )
+            n_width = len(str(n_fill))
+            for i in range(n_fill):
+                params = self._search_space.from_tensor(samples[i])
+                trial_id = len(valid_warm) + i
+                trial = self._objective(params=params, trial_id=trial_id, is_initial=True)
+                trials.append(trial)
+                label = f"[Initial {i + 1:>{n_width}}/{n_fill}]"
+                self._log_trial(trial, label)
+
         return trials
 
     @abstractmethod
