@@ -30,14 +30,10 @@ Output (example/hybrid_output/):
     hybrid_trials.csv                -- all trial results (both phases)
 """
 
-import csv
 import math
 import os
 import sys
 
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 import torch
 
 from pathlib import Path
@@ -50,261 +46,24 @@ from forward_problem import (
     sample_collocation_points,
 )
 
-from PINNs_Burgers import NetworkConfig, PDEConfig, TrainingConfig, BurgersPINNSolver
+from PINNs_Burgers import PDEConfig, TrainingConfig
 from bo import AccuracyObjective, BOConfig, HyperParameter, SearchSpace
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
 from opt_agent.report import IterationReportWriter
 from opt_tool.result import TrialResult
-from hybrid import HybridOptimizer, HybridResult
+from hybrid import (
+    HybridOptimizer,
+    plot_convergence,
+    plot_objective_scatter,
+    plot_space_comparison,
+    save_trials_csv,
+)
+from opt_viz.pinn_heatmap import plot_best_solution_heatmap
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hybrid_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 NU_TRUE = 0.01 / math.pi  # kinematic viscosity (Paper Section 5.1)
-
-
-# ---------------------------------------------------------------------------
-# Visualization
-# ---------------------------------------------------------------------------
-
-
-def plot_convergence(result: HybridResult) -> None:
-    """Plot cumulative best objective value vs trial number for both phases."""
-    sns.set_theme(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 4))
-
-    all_trials = result.llm_trials + result.bo_trials
-    best_so_far: list[float] = []
-    current_best = float("-inf")
-    for t in all_trials:
-        current_best = max(current_best, t.objective)
-        best_so_far.append(current_best)
-
-    trial_ids = list(range(len(all_trials)))
-    n_llm = len(result.llm_trials)
-
-    ax.axvline(x=n_llm - 0.5, color="gray", linestyle="--", alpha=0.6,
-               label="Phase 1 / Phase 2 boundary")
-    sns.lineplot(x=trial_ids, y=best_so_far, ax=ax, linewidth=1.5,
-                 marker="o", markersize=4)
-    ax.set_xlabel("Trial")
-    ax.set_ylabel("Best Objective So Far")
-    ax.set_title(
-        "Hybrid Convergence: Cumulative Best Objective vs Trial\n"
-        "Curve should rise monotonically and plateau as BO converges."
-    )
-    ax.legend()
-    path = os.path.join(OUTPUT_DIR, "hybrid_convergence.png")
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
-
-
-def plot_objective_scatter(result: HybridResult) -> None:
-    """Scatter plot of objective values for all trials, colored by phase."""
-    sns.set_theme(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 4))
-
-    llm_initial = [t for t in result.llm_trials if t.is_initial]
-    llm_guided = [t for t in result.llm_trials if not t.is_initial]
-    bo_initial = [t for t in result.bo_trials if t.is_initial]
-    bo_guided = [t for t in result.bo_trials if not t.is_initial]
-
-    offset = 0
-    if llm_initial:
-        ids = [t.trial_id + offset for t in llm_initial]
-        ax.scatter(ids, [t.objective for t in llm_initial],
-                   label="Phase 1: Sobol initial", marker="o", s=60, alpha=0.8)
-    if llm_guided:
-        ids = [t.trial_id + offset for t in llm_guided]
-        ax.scatter(ids, [t.objective for t in llm_guided],
-                   label="Phase 1: LLM proposal", marker="^", s=60, alpha=0.8)
-
-    offset = len(result.llm_trials)
-    if bo_initial:
-        ids = [t.trial_id + offset for t in bo_initial]
-        ax.scatter(ids, [t.objective for t in bo_initial],
-                   label="Phase 2: Sobol initial", marker="s", s=60, alpha=0.8)
-    if bo_guided:
-        ids = [t.trial_id + offset for t in bo_guided]
-        ax.scatter(ids, [t.objective for t in bo_guided],
-                   label="Phase 2: BO proposal", marker="D", s=60, alpha=0.8)
-
-    ax.axhline(y=result.best_objective, color="red", linestyle="--", alpha=0.7,
-               label=f"Best = {result.best_objective:.4e}")
-    ax.axvline(x=len(result.llm_trials) - 0.5, color="gray", linestyle="--",
-               alpha=0.4, label="Phase boundary")
-    ax.set_xlabel("Trial")
-    ax.set_ylabel(f"Objective  ({result.objective_name})")
-    ax.set_title(
-        "Hybrid Objective Values: Phase 1 (LLM) vs Phase 2 (BO)\n"
-        "BO proposals should tend toward higher objective values."
-    )
-    ax.legend(fontsize=8)
-    path = os.path.join(OUTPUT_DIR, "hybrid_objective_scatter.png")
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
-
-
-def plot_space_comparison(
-    result: HybridResult, original_space: SearchSpace
-) -> None:
-    """Bar chart comparing original vs narrowed search space width per parameter."""
-    sns.set_theme(style="whitegrid")
-    params = original_space.parameters
-    param_names = [hp.name for hp in params]
-    n = len(params)
-
-    orig_widths: list[float] = []
-    narr_widths: list[float] = []
-    for orig_hp, narr_hp in zip(params, result.narrowed_space.parameters):
-        if orig_hp.log_scale:
-            orig_widths.append(math.log(orig_hp.high) - math.log(orig_hp.low))
-            narr_widths.append(math.log(narr_hp.high) - math.log(narr_hp.low))
-        else:
-            orig_widths.append(orig_hp.high - orig_hp.low)
-            narr_widths.append(narr_hp.high - narr_hp.low)
-
-    x = np.arange(n)
-    width = 0.35
-    fig, ax = plt.subplots(figsize=(9, 4))
-    ax.bar(x - width / 2, orig_widths, width, label="Original", alpha=0.8)
-    ax.bar(x + width / 2, narr_widths, width, label="Narrowed", alpha=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(param_names, rotation=15, ha="right")
-    ax.set_ylabel("Parameter range width\n(log-scale params: log space)")
-    ax.set_title(
-        "Search Space Comparison: Original vs Narrowed\n"
-        "Narrowed bars should be shorter than or equal to original bars."
-    )
-    ax.legend()
-    path = os.path.join(OUTPUT_DIR, "hybrid_space_comparison.png")
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
-
-
-def plot_best_solution_heatmap(
-    result: HybridResult,
-    pde_config: PDEConfig,
-    base_training_config: TrainingConfig,
-    x_mesh: np.ndarray,
-    t_mesh: np.ndarray,
-    usol: np.ndarray,
-    t_grid: np.ndarray,
-    x_grid: np.ndarray,
-) -> None:
-    """Re-train PINN with best hyperparameters and plot predicted vs reference."""
-    from forward_problem import sample_boundary_data, sample_collocation_points
-
-    boundary_data = sample_boundary_data(
-        x_grid, t_grid, usol, n_u=base_training_config.n_u
-    )
-    collocation = sample_collocation_points(x_grid, t_grid, n_f=base_training_config.n_f)
-
-    best = result.best_params
-    net_cfg = NetworkConfig(
-        n_hidden_layers=int(best["n_hidden_layers"]),
-        n_neurons=int(best["n_neurons"]),
-    )
-    train_cfg = TrainingConfig(
-        n_u=base_training_config.n_u,
-        n_f=base_training_config.n_f,
-        lr=float(best["lr"]),
-        epochs_adam=int(best["epochs_adam"]),
-        epochs_lbfgs=base_training_config.epochs_lbfgs,
-    )
-
-    print(
-        f"  Re-training with best params: n_hidden_layers={best['n_hidden_layers']}, "
-        f"n_neurons={best['n_neurons']}, lr={best['lr']:.2e}, "
-        f"epochs_adam={best['epochs_adam']}"
-    )
-    solver = BurgersPINNSolver(pde_config, net_cfg, train_cfg)
-    forward_result = solver.solve_forward(boundary_data, collocation)
-    model = forward_result.model
-
-    device = next(model.parameters()).device
-    x_flat = torch.tensor(x_mesh.flatten(), dtype=torch.float32, device=device).unsqueeze(1)
-    t_flat = torch.tensor(t_mesh.flatten(), dtype=torch.float32, device=device).unsqueeze(1)
-    with torch.no_grad():
-        u_pred = model(t_flat, x_flat).cpu().numpy().reshape(x_mesh.shape)
-
-    rel_l2 = np.linalg.norm(u_pred - usol) / (np.linalg.norm(usol) + 1e-12)
-    vmin = float(usol.min())
-    vmax = float(usol.max())
-
-    sns.set_theme(style="ticks")
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
-    for ax, data, label in zip(
-        axes,
-        [u_pred, usol],
-        ["Best PINN Prediction u_theta(t, x)", "Reference u_ref(t, x)"],
-    ):
-        im = ax.pcolormesh(
-            t_grid.ravel(), x_grid.ravel(), data,
-            cmap="RdBu_r", vmin=vmin, vmax=vmax, shading="auto",
-        )
-        fig.colorbar(im, ax=ax, label="u")
-        ax.set_xlabel("t")
-        ax.set_ylabel("x")
-        ax.set_title(label)
-
-    fig.suptitle(
-        f"Hybrid Best Solution: Predicted vs Reference  (rel L2 = {rel_l2:.4e})\n"
-        "Left panel should match right panel closely."
-    )
-    path = os.path.join(OUTPUT_DIR, "hybrid_best_solution_heatmap.png")
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
-
-
-# ---------------------------------------------------------------------------
-# CSV output
-# ---------------------------------------------------------------------------
-
-
-def save_trials_csv(result: HybridResult) -> None:
-    """Save all trial results from both phases to a CSV file.
-
-    Columns: global_trial_id, phase, trial_id, is_initial,
-             n_hidden_layers, n_neurons, lr, epochs_adam,
-             objective, rel_l2_error, elapsed_time
-    """
-    param_names = ["n_hidden_layers", "n_neurons", "lr", "epochs_adam"]
-    fieldnames = [
-        "global_trial_id", "phase", "trial_id", "is_initial",
-        *param_names,
-        "objective", "rel_l2_error", "elapsed_time", "proposal_time",
-    ]
-    path = os.path.join(OUTPUT_DIR, "hybrid_trials.csv")
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        global_id = 0
-        for phase, trials in [("llm", result.llm_trials), ("bo", result.bo_trials)]:
-            for t in trials:
-                row: dict = {
-                    "global_trial_id": global_id,
-                    "phase": phase,
-                    "trial_id": t.trial_id,
-                    "is_initial": t.is_initial,
-                    "objective": t.objective,
-                    "rel_l2_error": t.rel_l2_error,
-                    "elapsed_time": t.elapsed_time,
-                    "proposal_time": t.proposal_time,
-                }
-                for name in param_names:
-                    row[name] = t.params.get(name, "")
-                writer.writerow(row)
-                global_id += 1
-    print(f"  Saved: {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -421,14 +180,26 @@ def main() -> None:
 
     # 7. Save CSV and visualizations
     print("\nSaving trial history ...")
-    save_trials_csv(result)
+    save_trials_csv(result, os.path.join(OUTPUT_DIR, "hybrid_trials.csv"))
     print("\nGenerating plots ...")
-    plot_convergence(result)
-    plot_objective_scatter(result)
-    plot_space_comparison(result, search_space)
+    plot_convergence(result, os.path.join(OUTPUT_DIR, "hybrid_convergence.png"))
+    plot_objective_scatter(result, os.path.join(OUTPUT_DIR, "hybrid_objective_scatter.png"))
+    plot_space_comparison(
+        result, search_space, os.path.join(OUTPUT_DIR, "hybrid_space_comparison.png")
+    )
     plot_best_solution_heatmap(
-        result, pde_config, base_training_config,
-        X_mesh, T_mesh, usol, t_grid, x_grid,
+        result.best_params,
+        pde_config,
+        base_training_config,
+        boundary_data,
+        collocation,
+        X_mesh,
+        T_mesh,
+        usol,
+        t_grid,
+        x_grid,
+        os.path.join(OUTPUT_DIR, "hybrid_best_solution_heatmap.png"),
+        title_prefix="Hybrid",
     )
 
     print(f"\nDone. Outputs saved to {OUTPUT_DIR}/")
