@@ -2,13 +2,14 @@
 
 import dataclasses
 import math
+from typing import Optional
 
 from bo.optimizer import BayesianOptimizer
 from bo.result import BOConfig
 from hybrid.result import HybridResult
 from opt_agent.chain import BaseChain
 from opt_agent.config import LLMConfig
-from opt_agent.optimizer import LLMOptimizer
+from opt_agent.optimizer import IterationCallback, LLMOptimizer
 from opt_agent.prompt import NarrowSearchSpacePromptBuilder
 from opt_tool.objective import ObjectiveFunction
 from opt_tool.result import TrialResult
@@ -42,6 +43,10 @@ class HybridOptimizer:
         LLM chain implementation for Phase 1. If None, GeminiChain is built
         from GEMINI_API_KEY and GEMINI_MODEL_NAME environment variables
         (delegated to LLMOptimizer).
+    on_llm_iteration:
+        Optional callback invoked after each LLM-guided iteration in Phase 1.
+        Forwarded directly to ``LLMOptimizer``.  Signature:
+        ``(meta, trial, all_trials_so_far) -> None``.
     n_llm_iterations:
         Number of LLM-guided iterations in Phase 1 (overrides
         llm_config.n_iterations using dataclasses.replace).
@@ -60,6 +65,7 @@ class HybridOptimizer:
         llm_config: LLMConfig,
         bo_config: BOConfig,
         chain: BaseChain | None = None,
+        on_llm_iteration: Optional[IterationCallback] = None,
         n_llm_iterations: int = 10,
         top_k_ratio: float = 0.3,
         margin_ratio: float = 0.1,
@@ -70,6 +76,7 @@ class HybridOptimizer:
         self._llm_config = llm_config
         self._bo_config = bo_config
         self._chain = chain
+        self._on_llm_iteration = on_llm_iteration
         self._n_llm_iterations = n_llm_iterations
         self._top_k_ratio = top_k_ratio
         self._margin_ratio = margin_ratio
@@ -93,6 +100,7 @@ class HybridOptimizer:
             objective=self._objective,
             config=modified_llm_config,
             chain=self._chain,
+            on_iteration=self._on_llm_iteration,
             prompt_builder=NarrowSearchSpacePromptBuilder(),
         )
         llm_result = llm_optimizer.optimize()

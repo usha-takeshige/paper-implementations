@@ -22,6 +22,7 @@ Prerequisites:
     Set GEMINI_API_KEY in a .env file.
 
 Output (example/hybrid_output/):
+    hybrid_llm_report.md             -- per-iteration LLM report (Phase 1)
     hybrid_convergence.png           -- cumulative best objective vs trial
     hybrid_objective_scatter.png     -- all trial objectives colored by phase
     hybrid_space_comparison.png      -- original vs narrowed bounds bar chart
@@ -51,7 +52,9 @@ from forward_problem import (
 
 from PINNs_Burgers import NetworkConfig, PDEConfig, TrainingConfig, BurgersPINNSolver
 from bo import AccuracyObjective, BOConfig, HyperParameter, SearchSpace
-from opt_agent.config import LLMConfig
+from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
+from opt_agent.report import IterationReportWriter
+from opt_tool.result import TrialResult
 from hybrid import HybridOptimizer, HybridResult
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "hybrid_output")
@@ -355,22 +358,62 @@ def main() -> None:
     # 6. Run hybrid optimization
     llm_config = LLMConfig(n_initial=5, n_iterations=10, seed=42)
     bo_config = BOConfig(n_initial=5, n_iterations=10, acquisition="EI", seed=42)
+    n_llm_iterations = 10
     print(
         f"\nStarting Hybrid: n_llm_initial={llm_config.n_initial}, "
-        f"n_llm_iterations=10, "
+        f"n_llm_iterations={n_llm_iterations}, "
         f"n_bo_initial={bo_config.n_initial}, "
         f"n_bo_iterations={bo_config.n_iterations}\n"
     )
+
+    # Phase 1 streaming report (LLM)
+    writer = IterationReportWriter(
+        output_dir=OUTPUT_DIR,
+        search_space=search_space,
+        llm_config=llm_config,
+        objective_name=objective.name,
+        filename="hybrid_llm_report.md",
+    )
+    iteration_metas: list[LLMIterationMeta] = []
+
+    def on_llm_iteration(
+        meta: LLMIterationMeta,
+        trial: TrialResult,
+        all_trials: list[TrialResult],
+    ) -> None:
+        """Write Phase 1 Sobol results on first call, then append each LLM iteration."""
+        if meta.iteration_id == 0:
+            initial = [t for t in all_trials if t.is_initial]
+            writer.write_initial_trials(initial)
+        writer.append_iteration(meta, trial, all_trials)
+        iteration_metas.append(meta)
+
     optimizer = HybridOptimizer(
         search_space=search_space,
         objective=objective,
         llm_config=llm_config,
         bo_config=bo_config,
-        n_llm_iterations=10,
+        on_llm_iteration=on_llm_iteration,
+        n_llm_iterations=n_llm_iterations,
         top_k_ratio=0.3,
         margin_ratio=0.1,
     )
     result = optimizer.optimize()
+
+    # Finalize Phase 1 report using the LLM trials
+    llm_trials = result.llm_trials
+    best_llm = max(llm_trials, key=lambda t: t.objective)
+    llm_result_for_report = LLMResult(
+        trials=llm_trials,
+        best_params=best_llm.params,
+        best_objective=best_llm.objective,
+        best_trial_id=best_llm.trial_id,
+        objective_name=result.objective_name,
+        llm_config=llm_config,
+        iteration_metas=iteration_metas,
+    )
+    report_path = writer.finalize(llm_result_for_report)
+    print(f"\n  Phase 1 report saved: {report_path}")
 
     print(f"\nBest trial: #{result.best_trial_id}")
     print(f"  Best objective: {result.best_objective:.4e}")
