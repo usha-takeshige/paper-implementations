@@ -1,7 +1,8 @@
 """PINN solution heatmap visualization.
 
 Re-trains a BurgersPINNSolver with the best hyperparameters found by an
-optimizer and plots the predicted solution against the reference solution.
+optimizer and plots the predicted solution, the reference solution, and the
+pointwise absolute error side by side.
 """
 
 from __future__ import annotations
@@ -36,7 +37,12 @@ def plot_best_solution_heatmap(
     *,
     title_prefix: str = "",
 ) -> None:
-    """Re-train PINN with best hyperparameters and plot predicted vs reference.
+    """Re-train PINN with best hyperparameters and plot a 3-panel figure.
+
+    The three panels are:
+    1. Predicted solution ``u_theta(t, x)``
+    2. Reference solution ``u_ref(t, x)``
+    3. Pointwise absolute error ``|u_theta - u_ref|``
 
     Parameters
     ----------
@@ -96,30 +102,48 @@ def plot_best_solution_heatmap(
     with torch.no_grad():
         u_pred = model(t_flat, x_flat).cpu().numpy().reshape(x_mesh.shape)
 
+    error = np.abs(u_pred - usol)
     rel_l2 = np.linalg.norm(u_pred - usol) / (np.linalg.norm(usol) + 1e-12)
     vmin = float(usol.min())
     vmax = float(usol.max())
 
     sns.set_theme(style="ticks")
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
-    for ax, data, label in zip(
-        axes,
+    fig, axes = plt.subplots(1, 3, figsize=(19, 4))
+
+    # Left: predicted solution
+    for ax, data, label, cmap, clabel in zip(
+        axes[:2],
         [u_pred, usol],
         ["Best PINN Prediction u_theta(t, x)", "Reference u_ref(t, x)"],
+        ["RdBu_r", "RdBu_r"],
+        ["u", "u"],
     ):
         im = ax.pcolormesh(
             t_grid.ravel(), x_grid.ravel(), data,
-            cmap="RdBu_r", vmin=vmin, vmax=vmax, shading="auto",
+            cmap=cmap, vmin=vmin, vmax=vmax, shading="auto",
         )
-        fig.colorbar(im, ax=ax, label="u")
+        fig.colorbar(im, ax=ax, label=clabel)
         ax.set_xlabel("t")
         ax.set_ylabel("x")
         ax.set_title(label)
 
+    # Right: pointwise absolute error
+    im_err = axes[2].pcolormesh(
+        t_grid.ravel(), x_grid.ravel(), error,
+        cmap="hot_r", vmin=0, shading="auto",
+    )
+    fig.colorbar(im_err, ax=axes[2], label="|u_theta - u_ref|")
+    axes[2].set_xlabel("t")
+    axes[2].set_ylabel("x")
+    axes[2].set_title(
+        f"Absolute Error  (max = {error.max():.4e})\n"
+        "|u_theta - u_ref|"
+    )
+
     prefix = f"{title_prefix} " if title_prefix else ""
     fig.suptitle(
         f"{prefix}Best Solution: Predicted vs Reference  (rel L2 = {rel_l2:.4e})\n"
-        "Left panel should match right panel closely."
+        "Left two panels should match; right panel should be light (near 0) except near the shock."
     )
     fig.tight_layout()
     fig.savefig(output_path, dpi=120)
