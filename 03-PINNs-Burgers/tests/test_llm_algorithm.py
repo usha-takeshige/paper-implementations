@@ -171,11 +171,13 @@ def test_llm_iteration_meta_fields() -> None:
         analysis_report="analysis",
         proposed_params={"lr": 1e-3},
         reasoning="reason",
+        proposal_time=1.23,
     )
     assert meta.iteration_id == 1
     assert meta.analysis_report == "analysis"
     assert meta.proposed_params == {"lr": 1e-3}
     assert meta.reasoning == "reason"
+    assert meta.proposal_time == 1.23
 
 
 @pytest.mark.algorithm
@@ -186,6 +188,7 @@ def test_llm_iteration_meta_frozen() -> None:
         analysis_report="a",
         proposed_params={},
         reasoning="r",
+        proposal_time=0.0,
     )
     with pytest.raises((dataclasses.FrozenInstanceError, TypeError)):
         meta.iteration_id = 99  # type: ignore[misc]
@@ -201,6 +204,7 @@ def test_llm_result_fields() -> None:
     meta = LLMIterationMeta(
         iteration_id=0, analysis_report="a",
         proposed_params={"lr": 1e-3}, reasoning="r",
+        proposal_time=0.0,
     )
     cfg = LLMConfig()
     result = LLMResult(
