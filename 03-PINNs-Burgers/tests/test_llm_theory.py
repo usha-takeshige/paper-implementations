@@ -12,7 +12,7 @@ from opt_agent import (
     LLMConfig,
     LLMOptimizer,
     LLMProposal,
-    PromptBuilder,
+    MaximizeObjectivePromptBuilder,
 )
 
 
@@ -177,7 +177,7 @@ def test_system_prompt_contains_all_param_info() -> None:
     Basis: llm_opt_design.md §PromptBuilder — system prompt includes full space definition.
     """
     search_space = make_search_space()
-    prompt = PromptBuilder.build_system_prompt(search_space, "accuracy")
+    prompt = MaximizeObjectivePromptBuilder().build_system_prompt(search_space, "accuracy")
     for hp in search_space.parameters:
         assert hp.name in prompt
         assert hp.param_type in prompt

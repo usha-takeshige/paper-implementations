@@ -13,7 +13,11 @@ from opt_agent.chain import BaseChain, GeminiChain
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
 from opt_agent.optimizer import LLMOptimizer
 from opt_agent.proposal import LLMProposal
-from opt_agent.prompt import PromptBuilder
+from opt_agent.prompt import (
+    MaximizeObjectivePromptBuilder,
+    NarrowSearchSpacePromptBuilder,
+    PromptBuilder,
+)
 from opt_agent.report import IterationReportWriter
 
 __all__ = [
@@ -25,5 +29,7 @@ __all__ = [
     "LLMResult",
     "LLMOptimizer",
     "LLMProposal",
+    "MaximizeObjectivePromptBuilder",
+    "NarrowSearchSpacePromptBuilder",
     "PromptBuilder",
 ]

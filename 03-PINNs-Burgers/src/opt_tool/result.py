@@ -24,6 +24,10 @@ class TrialResult(BaseModel):
         description="相対 L2 誤差 ‖u_pred - u_ref‖₂ / ‖u_ref‖₂"
     )
     elapsed_time: float = Field(description="学習にかかった経過時間 [秒]")
+    proposal_time: float = Field(
+        default=0.0,
+        description="提案にかかった経過時間 [秒]（BOは acquisition 最適化、LLMは chain.invoke）",
+    )
     is_initial: bool = Field(
         description="True: Sobol 初期サンプル、False: オプティマイザ提案点"
     )

@@ -1,10 +1,12 @@
 """LLM-based hyperparameter optimizer (Facade)."""
 
+import time
 from collections.abc import Callable
 from typing import Optional
 
 from opt_agent.chain import BaseChain, GeminiChain
 from opt_agent.config import LLMConfig, LLMIterationMeta, LLMResult
+from opt_agent.prompt import PromptBuilder
 from opt_tool.base import BaseOptimizer
 from opt_tool.result import TrialResult
 from opt_tool.space import SearchSpace
@@ -40,6 +42,7 @@ class LLMOptimizer(BaseOptimizer):
         config: LLMConfig = LLMConfig(),
         chain: BaseChain | None = None,
         on_iteration: Optional[IterationCallback] = None,
+        prompt_builder: PromptBuilder | None = None,
     ) -> None:
         """Initialize LLMOptimizer.
 
@@ -59,6 +62,10 @@ class LLMOptimizer(BaseOptimizer):
             Called with (meta, trial, all_trials_so_far) immediately after
             the proposed point is evaluated.  Use this hook to write
             per-iteration reports or log streaming results.
+        prompt_builder:
+            Strategy for building LLM prompts. Ignored when ``chain`` is
+            provided. Defaults to ``MaximizeObjectivePromptBuilder`` when
+            None and no chain is given.
 
         Raises
         ------
@@ -82,7 +89,11 @@ class LLMOptimizer(BaseOptimizer):
                     "Set it in .env or pass a chain argument."
                 )
             model_name = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.0-flash")
-            self._chain = GeminiChain(model_name=model_name, api_key=api_key)
+            self._chain = GeminiChain(
+                model_name=model_name,
+                api_key=api_key,
+                prompt_builder=prompt_builder,
+            )
 
     def _run_sequential_search(
         self, initial_trials: list[TrialResult]
@@ -107,18 +118,21 @@ class LLMOptimizer(BaseOptimizer):
         self._metas = []
 
         for i in range(self._config.n_iterations):
+            t0 = time.perf_counter()
             proposal = self._chain.invoke(
                 search_space=self._search_space,
                 trials=trials,
                 objective_name=self._objective.name,
                 iteration_id=i,
             )
+            proposal_time = time.perf_counter() - t0
 
             # Clamp and round proposed parameters
             params = self._clamp_params(proposal.proposed_params)
 
             trial_id = len(trials)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
+            trial = trial.model_copy(update={"proposal_time": proposal_time})
             trials.append(trial)
             label = f"[LLM    {i + 1:>{len(str(self._config.n_iterations))}}/{self._config.n_iterations}]"
             self._log_trial(trial, label)
@@ -128,6 +142,7 @@ class LLMOptimizer(BaseOptimizer):
                 analysis_report=proposal.analysis_report,
                 proposed_params=params,
                 reasoning=proposal.reasoning,
+                proposal_time=proposal_time,
             )
             self._metas.append(meta)
 

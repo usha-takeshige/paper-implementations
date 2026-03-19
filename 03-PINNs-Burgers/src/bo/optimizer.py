@@ -1,5 +1,7 @@
 """Bayesian optimizer using BoTorch SingleTaskGP."""
 
+import time
+
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, UpperConfidenceBound
 from botorch.fit import fit_gpytorch_mll
@@ -70,17 +72,20 @@ class BayesianOptimizer(BaseOptimizer):
         """
         trials: list[TrialResult] = list(initial_trials)
 
-        # Reconstruct train_X using the same Sobol seed; draw_sobol_samples is deterministic
-        train_X = self._search_space.sample_sobol(
-            n=self._config.n_initial, seed=self._config.seed
-        ).to(torch.float64)  # (n_initial, dim)
+        # Build train_X from actual evaluated params to correctly handle
+        # warm-start trials (which may not lie on the original Sobol grid).
+        # to_tensor returns (1, dim), so cat along dim=0 gives (n, dim).
+        train_X = torch.cat(
+            [self._search_space.to_tensor(t.params) for t in initial_trials],
+            dim=0,
+        ).to(torch.float64)  # (len(initial_trials), dim)
         train_Y = torch.tensor(
             [[t.objective] for t in initial_trials], dtype=torch.float64
-        )  # (n_initial, 1)
+        )  # (len(initial_trials), 1)
 
         n_iter_width = len(str(self._config.n_iterations))
         for iteration in range(self._config.n_iterations):
-            trial_id = self._config.n_initial + iteration
+            trial_id = len(initial_trials) + iteration
 
             # Fit Gaussian process surrogate
             gp = SingleTaskGP(
@@ -100,6 +105,7 @@ class BayesianOptimizer(BaseOptimizer):
                 )
 
             # Optimize acquisition to get next candidate (q=1: one point at a time)
+            t0 = time.perf_counter()
             x_next, _ = optimize_acqf(
                 acq_function=acq_func,
                 bounds=self._search_space.bounds,
@@ -107,9 +113,11 @@ class BayesianOptimizer(BaseOptimizer):
                 num_restarts=self._config.num_restarts,
                 raw_samples=self._config.raw_samples,
             )  # (1, dim)
+            proposal_time = time.perf_counter() - t0
 
             params = self._search_space.from_tensor(x_next)
             trial = self._objective(params=params, trial_id=trial_id, is_initial=False)
+            trial = trial.model_copy(update={"proposal_time": proposal_time})
             trials.append(trial)
             label = f"[BO     {iteration + 1:>{n_iter_width}}/{self._config.n_iterations}]"
             self._log_trial(trial, label)

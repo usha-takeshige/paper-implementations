@@ -40,22 +40,25 @@ class IterationReportWriter:
         search_space: SearchSpace,
         llm_config: LLMConfig,
         objective_name: str,
+        filename: str = "opt_agent_report.md",
     ) -> None:
         """Create the output file and write the report header.
 
         Parameters
         ----------
         output_dir:
-            Directory where ``opt_agent_report.md`` is saved.
+            Directory where the report file is saved.
         search_space:
             Search space definition written in the header.
         llm_config:
             LLM optimization configuration written in the header.
         objective_name:
             Name of the objective function.
+        filename:
+            Output filename. Defaults to ``opt_agent_report.md``.
         """
         os.makedirs(output_dir, exist_ok=True)
-        self._path = os.path.join(output_dir, "opt_agent_report.md")
+        self._path = os.path.join(output_dir, filename)
         self._n_iterations = llm_config.n_iterations
 
         space_rows = build_search_space_table(search_space)

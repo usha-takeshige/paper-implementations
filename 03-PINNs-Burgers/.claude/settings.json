@@ -10,6 +10,7 @@
       "Bash(git diff *)",
       "Bash(git log *)",
       "Bash(gh pr view *)",
+      "Bash(gh issue view *)",
       "Edit(*.py)",
       "Edit(*.md)"
     ],

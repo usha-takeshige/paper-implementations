@@ -18,7 +18,7 @@ from opt_agent import (
     LLMOptimizer,
     LLMProposal,
     LLMResult,
-    PromptBuilder,
+    MaximizeObjectivePromptBuilder,
 )
 
 
@@ -171,11 +171,13 @@ def test_llm_iteration_meta_fields() -> None:
         analysis_report="analysis",
         proposed_params={"lr": 1e-3},
         reasoning="reason",
+        proposal_time=1.23,
     )
     assert meta.iteration_id == 1
     assert meta.analysis_report == "analysis"
     assert meta.proposed_params == {"lr": 1e-3}
     assert meta.reasoning == "reason"
+    assert meta.proposal_time == 1.23
 
 
 @pytest.mark.algorithm
@@ -186,6 +188,7 @@ def test_llm_iteration_meta_frozen() -> None:
         analysis_report="a",
         proposed_params={},
         reasoning="r",
+        proposal_time=0.0,
     )
     with pytest.raises((dataclasses.FrozenInstanceError, TypeError)):
         meta.iteration_id = 99  # type: ignore[misc]
@@ -201,6 +204,7 @@ def test_llm_result_fields() -> None:
     meta = LLMIterationMeta(
         iteration_id=0, analysis_report="a",
         proposed_params={"lr": 1e-3}, reasoning="r",
+        proposal_time=0.0,
     )
     cfg = LLMConfig()
     result = LLMResult(
@@ -269,7 +273,7 @@ def test_llm_proposal_missing_field() -> None:
 def test_prompt_builder_system_contains_param_names() -> None:
     """ALG-LLM-09: System prompt contains all parameter names."""
     search_space = make_search_space()
-    prompt = PromptBuilder.build_system_prompt(search_space, "accuracy")
+    prompt = MaximizeObjectivePromptBuilder().build_system_prompt(search_space, "accuracy")
     for name in ["n_hidden_layers", "n_neurons", "lr", "epochs_adam"]:
         assert name in prompt, f"'{name}' not found in system prompt"
 
@@ -278,7 +282,7 @@ def test_prompt_builder_system_contains_param_names() -> None:
 def test_prompt_builder_system_contains_bounds() -> None:
     """ALG-LLM-10: System prompt contains each parameter's low and high values."""
     search_space = make_search_space()
-    prompt = PromptBuilder.build_system_prompt(search_space, "accuracy")
+    prompt = MaximizeObjectivePromptBuilder().build_system_prompt(search_space, "accuracy")
     for hp in search_space.parameters:
         assert str(hp.low) in prompt, f"low={hp.low} not found in system prompt"
         assert str(hp.high) in prompt, f"high={hp.high} not found in system prompt"
@@ -294,7 +298,7 @@ def test_prompt_builder_human_contains_all_trials() -> None:
         )
         for i in range(3)
     ]
-    prompt = PromptBuilder.build_human_prompt(trials, iteration_id=2)
+    prompt = MaximizeObjectivePromptBuilder().build_human_prompt(trials, iteration_id=2)
     for t in trials:
         assert str(t.trial_id) in prompt
 
@@ -312,7 +316,7 @@ def test_prompt_builder_human_contains_best() -> None:
             rel_l2_error=0.1, elapsed_time=1.0, is_initial=True,
         ),
     ]
-    prompt = PromptBuilder.build_human_prompt(trials, iteration_id=0)
+    prompt = MaximizeObjectivePromptBuilder().build_human_prompt(trials, iteration_id=0)
     # Best trial is id=1 (objective=5.0)
     assert "1" in prompt
 

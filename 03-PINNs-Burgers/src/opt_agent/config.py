@@ -38,6 +38,9 @@ class LLMIterationMeta:
     reasoning: str
     """LLM-generated reasoning for the proposed parameters (natural language)."""
 
+    proposal_time: float
+    """LLM の chain.invoke() にかかった経過時間 [秒]"""
+
 
 @dataclass(frozen=True)
 class LLMResult(BaseOptimizationResult):
